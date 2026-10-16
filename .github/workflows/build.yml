@@ -1,0 +1,42 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: haztify-linux-x86_64
+            bin: haztify
+          - os: macos-latest
+            artifact: haztify-macos-arm64
+            bin: haztify
+          - os: windows-latest
+            artifact: haztify-windows-x86_64
+            bin: haztify.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      - run: cargo test --locked
+      - run: cargo build --release --locked
+      - name: Debian package
+        if: runner.os == 'Linux'
+        run: cargo install cargo-deb --locked && cargo deb --no-build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            target/release/${{ matrix.bin }}
+            target/debian/*.deb

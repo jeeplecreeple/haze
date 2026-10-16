@@ -1,0 +1,50 @@
+[package]
+name = "haztify"
+version = "0.1.0"
+edition = "2024"
+description = "A native, lightweight, heavily customisable Spotify client with an AI DJ"
+license = "MIT"
+default-run = "haztify"
+
+[dependencies]
+anyhow = "1"
+directories = "6"
+env_logger = "0.11"
+log = "0.4"
+rand = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "fs"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+urlencoding = "2"
+
+# UI: iced is a pure-Rust native toolkit (wgpu, with a CPU tiny-skia fallback). No webview.
+iced = { version = "0.14", features = ["tokio", "image-without-codecs"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+
+# Playback: librespot streams and decodes Spotify audio in-process (Premium required).
+librespot-core = { version = "0.8", default-features = false, features = ["rustls-tls-webpki-roots"] }
+librespot-oauth = { version = "0.8", default-features = false, features = ["rustls-tls-webpki-roots"] }
+librespot-playback = { version = "0.8", default-features = false, features = ["rodio-backend", "rustls-tls-webpki-roots"] }
+
+# DJ voice playback (mp3/wav from TTS providers).
+rodio = { version = "0.21", default-features = false, features = ["playback", "mp3", "wav"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"
+
+# `cargo deb` builds a .deb for Debian and Ubuntu.
+[package.metadata.deb]
+maintainer = "Haz"
+section = "sound"
+depends = "libasound2 | libasound2t64, libxkbcommon0"
+recommends = "espeak-ng"
+assets = [
+    ["target/release/haztify", "usr/bin/", "755"],
+    ["packaging/linux/haztify.desktop", "usr/share/applications/", "644"],
+]

@@ -1,0 +1,90 @@
+# Haztify configuration. Every key is optional; anything left out uses the default shown here.
+
+[spotify]
+# Client ID of your own app from https://developer.spotify.com/dashboard
+client_id = ""
+# Must be registered on that app exactly as written.
+redirect_uri = "http://127.0.0.1:8898/login"
+
+[playback]
+bitrate = "high"          # low (96 kbps) | normal (160) | high (320)
+volume = 70               # 0-100
+normalisation = true
+gapless = true
+audio_cache_mb = 0        # keep this much audio on disk for replays; 0 = off
+
+[appearance]
+theme = "haztify"         # haztify | spotify | nord | gruvbox | catppuccin | dracula | light
+font_size = 14.0
+font_family = ""          # any installed font, e.g. "Inter"; empty = default
+corner_radius = 8.0
+show_album_art = true
+compact = false           # denser track rows
+window_width = 1100.0
+window_height = 720.0
+renderer = "cpu"          # cpu = lowest memory; gpu = wgpu (Vulkan/Metal/DirectX)
+
+# Hex colours that override the theme. Empty = use the theme's colour.
+[appearance.colors]
+background = ""
+surface = ""
+text = ""
+muted_text = ""
+accent = ""               # e.g. "#1db954"
+danger = ""
+
+[layout]
+sidebar = "left"          # left | right
+sidebar_width = 220.0
+player_bar = "bottom"     # top | bottom
+show_side_panel = true    # the up-next queue
+side_panel = "right"      # left | right
+side_panel_width = 300.0
+track_columns = ["title", "artist", "album", "duration"]   # any order, any subset
+
+[dj]
+provider = "openai"       # openai (and any OpenAI-compatible API) | anthropic | gemini
+model = ""                # empty = gpt-4o-mini / claude-opus-5-5 / gemini-2.5-flash
+# Point the openai provider at any compatible API, for example:
+#   OpenRouter  https://openrouter.ai/api/v1
+#   Groq        https://api.groq.com/openai/v1
+#   Mistral     https://api.mistral.ai/v1
+#   DeepSeek    https://api.deepseek.com/v1
+#   Ollama      http://localhost:11434/v1   (no key needed)
+#   LM Studio   http://localhost:1234/v1    (no key needed)
+base_url = ""
+api_key = ""              # stored in plain text here; api_key_env is the safer option
+api_key_env = ""          # empty = OPENAI_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY
+mode = "talk"             # queue = only pick songs | talk = text intros | voice = spoken intros
+name = "Haz DJ"
+persona = "Warm, upbeat late-night radio host. Knows music history and loves a good segue."
+batch_size = 5            # songs per set
+refill_at = 1             # top up when this many songs are left
+talk_every = 2            # intro before every Nth DJ song
+max_words = 45
+discovery = 40            # 0 = favourites only, 100 = all new
+allow_explicit = true
+language = "English"
+temperature = 0.9         # OpenAI-compatible and Gemini only
+
+[dj.tts]
+engine = "system"         # system = OS voice | openai = OpenAI-compatible /audio/speech
+voice = ""                # system: an OS voice name; openai: alloy, nova, onyx, shimmer...
+model = "gpt-4o-mini-tts"
+base_url = ""             # empty = the DJ's OpenAI-compatible URL, else api.openai.com
+api_key_env = ""          # empty = the DJ's key (openai provider) or OPENAI_API_KEY
+duck_to = 25              # music volume % while the DJ talks; 0 pauses instead
+
+# Keys: a character or space, enter, escape, tab, left, right, up, down.
+# Modifiers: ctrl (also Cmd on macOS), shift, alt. Media keys always work.
+[keys]
+play_pause = "ctrl+space"
+next = "ctrl+right"
+previous = "ctrl+left"
+volume_up = "ctrl+up"
+volume_down = "ctrl+down"
+seek_forward = "shift+right"
+seek_back = "shift+left"
+search = "ctrl+f"
+toggle_side_panel = "ctrl+b"
+dj_now = "ctrl+d"

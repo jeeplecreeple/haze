@@ -1,0 +1,26 @@
+# Maintainer: Haz
+pkgname=haztify
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Native, lightweight, customisable Spotify client with an AI DJ"
+arch=('x86_64' 'aarch64')
+url="https://github.com/soundingapple-beep/haztify"
+license=('MIT')
+depends=('alsa-lib' 'libxkbcommon' 'gcc-libs')
+optdepends=('espeak-ng: spoken DJ intros with the system voice'
+            'vulkan-icd-loader: GPU renderer')
+makedepends=('cargo' 'git')
+source=("$pkgname::git+$url.git")
+sha256sums=('SKIP')
+
+build() {
+  cd "$pkgname"
+  cargo build --release --locked
+}
+
+package() {
+  cd "$pkgname"
+  install -Dm755 target/release/haztify "$pkgdir/usr/bin/haztify"
+  install -Dm644 packaging/linux/haztify.desktop "$pkgdir/usr/share/applications/haztify.desktop"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

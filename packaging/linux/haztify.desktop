@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Haztify
+Comment=Lightweight Spotify client with an AI DJ
+Exec=haztify
+Icon=multimedia-audio-player
+Terminal=false
+Categories=AudioVideo;Audio;Player;
