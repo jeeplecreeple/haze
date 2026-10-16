@@ -5,6 +5,10 @@ on:
     branches: [main]
     tags: ["v*"]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -12,31 +16,88 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            artifact: haztify-linux-x86_64
-            bin: haztify
-          - os: macos-latest
-            artifact: haztify-macos-arm64
-            bin: haztify
+          - os: ubuntu-22.04
+            name: linux-x86_64
+          - os: ubuntu-22.04-arm
+            name: linux-arm64
+          - os: macos-14
+            name: macos-arm64
+          - os: macos-13
+            name: macos-x86_64
           - os: windows-latest
-            artifact: haztify-windows-x86_64
-            bin: haztify.exe
+            name: windows-x86_64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.name }}
+
       - name: Linux build dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+
       - run: cargo test --locked
       - run: cargo build --release --locked
-      - name: Debian package
+
+      # Ubuntu 22.04 is used on purpose: binaries built against its older glibc
+      # also run on newer Debian, Ubuntu, Fedora and Arch.
+      - name: Package (Linux)
         if: runner.os == 'Linux'
-        run: cargo install cargo-deb --locked && cargo deb --no-build
+        run: |
+          mkdir -p dist/haztify
+          cp target/release/haztify README.md GUIDE.md LICENSE config.example.toml packaging/linux/haztify.desktop dist/haztify/
+          tar -C dist -czf haztify-${{ matrix.name }}.tar.gz haztify
+          cargo install cargo-deb --locked
+          cargo deb --no-build --output haztify-${{ matrix.name }}.deb
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          app=dist/Haztify.app/Contents
+          mkdir -p "$app/MacOS"
+          cp target/release/haztify "$app/MacOS/haztify"
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          sed "s/@VERSION@/$version/g" packaging/macos/Info.plist > "$app/Info.plist"
+          # Ad-hoc signature so Apple Silicon will run it; it is not notarized.
+          codesign --force --deep --sign - dist/Haztify.app
+          cp README.md GUIDE.md LICENSE config.example.toml dist/
+          ditto -c -k --keepParent dist haztify-${{ matrix.name }}.zip
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/haztify | Out-Null
+          Copy-Item target/release/haztify.exe, README.md, GUIDE.md, LICENSE, config.example.toml dist/haztify/
+          Compress-Archive -Path dist/haztify -DestinationPath haztify-${{ matrix.name }}.zip
+
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
+          name: haztify-${{ matrix.name }}
           path: |
-            target/release/${{ matrix.bin }}
-            target/debian/*.deb
+            haztify-${{ matrix.name }}.*
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            Downloads for every platform are below. See GUIDE.md for install steps.
+
+            **macOS and Windows builds are not tested yet.** They compile in CI, but nobody
+            has played music with them so far. If you try one, please open an issue saying
+            whether it worked, even if it did.

@@ -15,6 +15,26 @@ that runs on **your own** LLM API key.
   and queue sit on, player bar on top or bottom, track columns, keyboard shortcuts.
 - Linux (Arch, Debian, Ubuntu, Fedora, ...), Windows and macOS.
 
+> ⚠️ **The macOS and Windows builds are NOT tested.** They compile in CI, but nobody has played
+> music with them yet. If you try one, you're very welcome to
+> [open an issue](https://github.com/jeeplecreeple/haztify/issues/new) to say whether it works,
+> even if it does. Linux is where Haztify is developed.
+
+## Download
+
+Get the latest build from [Releases](https://github.com/jeeplecreeple/haztify/releases/latest):
+
+| System | File |
+| --- | --- |
+| Debian, Ubuntu and derivatives | `haztify-linux-x86_64.deb` / `haztify-linux-arm64.deb` |
+| Any other Linux | `haztify-linux-x86_64.tar.gz` / `haztify-linux-arm64.tar.gz` |
+| Arch Linux | [`packaging/arch/PKGBUILD`](packaging/arch/PKGBUILD) (`makepkg -si`) |
+| macOS, Apple Silicon (untested) | `haztify-macos-arm64.zip` |
+| macOS, Intel (untested) | `haztify-macos-x86_64.zip` |
+| Windows 10/11 (untested) | `haztify-windows-x86_64.zip` |
+
+**New here? The [guide](GUIDE.md) walks through install, Spotify setup, the DJ and customising.**
+
 ## First run
 
 1. Create a free app at <https://developer.spotify.com/dashboard>.
@@ -84,8 +104,9 @@ cargo build --release --locked
 Always build with `--locked`: the lockfile pins `vergen` to 9.0.x, which librespot 0.8's build script
 needs.
 
-Packaging: `packaging/arch/PKGBUILD` for Arch, `cargo deb` for a `.deb` (Debian/Ubuntu), and the
-GitHub Actions workflow builds Linux, macOS and Windows binaries on every push.
+Packaging: `packaging/arch/PKGBUILD` for Arch, `cargo deb` for a `.deb` (Debian/Ubuntu). The GitHub
+Actions workflow builds and packages Linux (x86_64, arm64), macOS (Apple Silicon, Intel) and Windows
+on every push, and pushing a `v*` tag publishes them as a GitHub release.
 
 ## Default shortcuts
 
