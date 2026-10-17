@@ -67,7 +67,7 @@ fn client() -> Result<reqwest::Client> {
 /// Compares dotted version numbers, so a tag like v0.3.0.1 works as well as v0.3.1.
 fn is_newer(tag: &str, current: &str) -> bool {
     let parse = |v: &str| -> Option<Vec<u64>> {
-        let mut parts = v.trim().trim_start_matches('v').split('.').map(|p| p.parse().ok()).collect::<Option<Vec<u64>>>()?;
+        let mut parts = v.trim().trim_start_matches(['v', 'V']).split('.').map(|p| p.parse().ok()).collect::<Option<Vec<u64>>>()?;
         while parts.len() > 1 && parts.last() == Some(&0) {
             parts.pop();
         }
@@ -90,7 +90,7 @@ pub async fn check() -> Result<Option<Release>> {
     let download = asset_name()
         .and_then(|name| raw.assets.iter().find(|a| a.name == name))
         .map(|a| a.browser_download_url.clone());
-    Ok(Some(Release { version: raw.tag_name.trim_start_matches('v').to_string(), page: raw.html_url, download }))
+    Ok(Some(Release { version: raw.tag_name.trim_start_matches(['v', 'V']).to_string(), page: raw.html_url, download }))
 }
 
 /// What an update replaces: the program file, or on macOS the whole Haze.app.
@@ -249,6 +249,7 @@ mod tests {
         assert!(!is_newer("v0.1.9", "0.2.0"));
         assert!(!is_newer("nightly", "0.2.0"));
         assert!(is_newer("v0.3.0.1", "0.3.0"));
+        assert!(is_newer("V0.4.2", "0.4.1"));
         assert!(!is_newer("v0.2.5.0", "0.3.0"));
         assert!(!is_newer("v0.3.0.0", "0.3.0"));
     }
