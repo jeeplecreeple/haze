@@ -13,7 +13,8 @@ license=('MIT')
 depends=('alsa-lib' 'libxkbcommon' 'libxkbcommon-x11' 'gcc-libs' 'glibc')
 optdepends=('espeak-ng: spoken DJ intros with the system voice'
             'speech-dispatcher: alternative system voice for spoken DJ intros'
-            'vulkan-icd-loader: GPU renderer (renderer = "gpu")')
+            'vulkan-icd-loader: GPU renderer (renderer = "gpu")'
+            'xdg-desktop-portal-gtk: file picker for custom icons, covers and fonts')
 makedepends=('cargo')
 options=('!lto' '!debug')
 source=()
@@ -47,6 +48,7 @@ package() {
   cd "$(_root)"
   install -Dm755 "$srcdir/target/release/haztify" "$pkgdir/usr/bin/haztify"
   install -Dm644 packaging/linux/haztify.desktop "$pkgdir/usr/share/applications/haztify.desktop"
+  install -Dm644 assets/icon.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/haztify.png"
   install -Dm644 config.example.toml "$pkgdir/usr/share/doc/$pkgname/config.example.toml"
   install -Dm644 GUIDE.md README.md -t "$pkgdir/usr/share/doc/$pkgname/"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"

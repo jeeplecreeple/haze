@@ -2,6 +2,7 @@
 
 mod config;
 mod dj;
+mod lyrics;
 mod player;
 mod queue;
 mod spotify;

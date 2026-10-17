@@ -63,6 +63,7 @@ jobs:
         run: |
           mkdir -p dist/haztify
           cp target/release/haztify README.md GUIDE.md LICENSE config.example.toml packaging/linux/haztify.desktop dist/haztify/
+          cp assets/icon.png dist/haztify/haztify.png
           tar -C dist -czf haztify-${{ matrix.name }}.tar.gz haztify
           cargo install cargo-deb --locked
           cargo deb --no-build --output haztify-${{ matrix.name }}.deb
@@ -75,6 +76,14 @@ jobs:
           cp target/release/haztify "$app/MacOS/haztify"
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           sed "s/@VERSION@/$version/g" packaging/macos/Info.plist > "$app/Info.plist"
+          mkdir -p "$app/Resources" haztify.iconset
+          for s in 16 32 128 256; do
+            sips -z $s $s assets/icon.png --out haztify.iconset/icon_${s}x${s}.png
+            if [ $((s * 2)) -le 256 ]; then
+              sips -z $((s * 2)) $((s * 2)) assets/icon.png --out haztify.iconset/icon_${s}x${s}@2x.png
+            fi
+          done
+          iconutil -c icns haztify.iconset -o "$app/Resources/haztify.icns"
           # Ad-hoc signature so Apple Silicon will run it; it is not notarized.
           codesign --force --deep --sign - dist/Haztify.app
           cp README.md GUIDE.md LICENSE config.example.toml dist/

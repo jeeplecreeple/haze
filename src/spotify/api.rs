@@ -37,6 +37,7 @@ pub struct Playlist {
     pub name: String,
     pub owner: String,
     pub track_count: u32,
+    pub image_url: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -105,6 +106,7 @@ impl Api {
                 name: p.name,
                 owner: p.owner.and_then(|o| o.display_name).unwrap_or_default(),
                 track_count: p.tracks.or(p.items).map(|t| t.total).unwrap_or(0),
+                image_url: pick_image(p.images.as_deref().unwrap_or_default()),
             }));
             if out.len() < MAX_LIST {
                 next = page.next;
@@ -238,6 +240,7 @@ struct RawPlaylist {
     owner: Option<RawOwner>,
     tracks: Option<Total>,
     items: Option<Total>,
+    images: Option<Vec<RawImage>>,
 }
 
 #[derive(Deserialize)]
@@ -286,18 +289,20 @@ struct RawImage {
     width: Option<u32>,
 }
 
+/// The smallest image that is still sharp on the lyrics page and playlist headers (300px).
+fn pick_image(images: &[RawImage]) -> Option<String> {
+    let mut imgs: Vec<&RawImage> = images.iter().collect();
+    imgs.sort_by_key(|i| i.width.unwrap_or(640));
+    imgs.iter().find(|i| i.width.unwrap_or(640) >= 300).or(imgs.last()).map(|i| i.url.clone())
+}
+
 impl RawTrack {
     fn into_track(self) -> Option<Track> {
         if self.is_local || self.kind.as_deref().is_some_and(|k| k != "track") {
             return None;
         }
         let album = self.album;
-        let image_url = album.as_ref().and_then(|a| {
-            // Smallest image that is still at least 64px wide.
-            let mut imgs: Vec<&RawImage> = a.images.iter().collect();
-            imgs.sort_by_key(|i| i.width.unwrap_or(640));
-            imgs.iter().find(|i| i.width.unwrap_or(640) >= 64).or(imgs.last()).map(|i| i.url.clone())
-        });
+        let image_url = album.as_ref().and_then(|a| pick_image(&a.images));
         Some(Track {
             id: self.id?,
             uri: self.uri?,
@@ -329,7 +334,7 @@ mod tests {
         let tracks: Vec<Track> =
             page.items.into_iter().filter_map(|i| i.track.or(i.item)).filter_map(RawTrack::into_track).collect();
         assert_eq!(tracks.len(), 2);
-        assert_eq!(tracks[0].image_url.as_deref(), Some("small"));
+        assert_eq!(tracks[0].image_url.as_deref(), Some("mid"));
         assert_eq!(tracks[1].name, "Two");
     }
 }

@@ -119,6 +119,14 @@ impl Audio {
         self.player.seek(position_ms);
     }
 
+    /// Spotify's own (time-synced) lyrics for a track, as raw JSON.
+    pub async fn spotify_lyrics(&self, track_id: &str) -> Result<Vec<u8>> {
+        let id = librespot_core::spotify_id::SpotifyId::from_base62(track_id).map_err(|e| anyhow!("bad track id: {e}"))?;
+        let session = self.session.lock().expect("session lock").clone();
+        let bytes = session.spclient().get_lyrics(&id).await.map_err(|e| anyhow!("Spotify lyrics: {e}"))?;
+        Ok(bytes.to_vec())
+    }
+
     /// 0-100
     pub fn set_volume(&self, volume: u8) {
         self.mixer.set_volume(volume_to_u16(volume));

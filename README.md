@@ -11,8 +11,13 @@ that runs on **your own** LLM API key.
   (optionally) introduces them like a radio host, as text or out loud.
 - **Bring your own model.** OpenAI, Anthropic Claude, Google Gemini, and anything OpenAI-compatible:
   OpenRouter, Groq, Mistral, DeepSeek, xAI, Together, or a local Ollama / LM Studio.
-- **Customisable.** Themes, colours, font, size, corner radius, compact rows, which side the sidebar
-  and queue sit on, player bar on top or bottom, track columns, keyboard shortcuts.
+- **Synced lyrics.** A karaoke-style lyrics view in the spirit of Spicy Lyrics: words light up as
+  they're sung, a blurred cover-art background, instrumental-break dots, click a line to jump there,
+  full screen. Lyrics come from Spotify, with [LRCLIB](https://lrclib.net) as a fallback.
+- **Customisable.** Themes (including Apple Music light and dark) or your own theme files, colours,
+  an accent that follows the cover art, your own fonts, your own app icon, your own playlist
+  covers, corner radius, compact rows, which side the sidebar and queue sit on, player bar on top or
+  bottom, track columns, keyboard shortcuts.
 - Linux (Arch, Debian, Ubuntu, Fedora, ...), Windows and macOS.
 
 > ⚠️ **The macOS and Windows builds are NOT tested.** They compile in CI, but nobody has played
@@ -82,7 +87,7 @@ sync your dotfiles.
 `renderer = "cpu"` (default) uses the lightweight software renderer; `"gpu"` uses Vulkan, Metal or
 DirectX via wgpu, which is smoother on big/high-refresh screens but costs more memory.
 
-Set `HAZTIFY_DEMO=1` (or `=tracks`, `=settings`) to open the UI with sample data and no login, handy
+Set `HAZTIFY_DEMO=1` (or `=tracks`, `=lyrics`, `=settings`) to open the UI with sample data and no login, handy
 for trying themes and layouts.
 
 ## Building
@@ -111,7 +116,7 @@ on every push, and pushing a `v*` tag publishes them as a GitHub release.
 ## Default shortcuts
 
 `Ctrl+Space` play/pause · `Ctrl+→/←` next/previous · `Shift+→/←` seek 10 s · `Ctrl+↑/↓` volume ·
-`Ctrl+F` search · `Ctrl+B` queue panel · `Ctrl+D` start the DJ. Media keys work too. `Ctrl` also
+`Ctrl+F` search · `Ctrl+B` queue panel · `Ctrl+D` start the DJ · `Ctrl+L` lyrics. Media keys work too. `Ctrl` also
 means `Cmd` on macOS. Rebind any of them under `[keys]`.
 
 ## Notes

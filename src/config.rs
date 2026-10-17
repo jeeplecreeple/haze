@@ -22,6 +22,13 @@ pub fn cache_dir() -> Result<PathBuf> {
     Ok(dirs()?.cache_dir().to_path_buf())
 }
 
+/// A folder next to the config file, created on demand: `fonts`, `themes`, `covers`...
+pub fn data_dir(name: &str) -> Result<PathBuf> {
+    let dir = dirs()?.config_dir().join(name);
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -30,7 +37,10 @@ pub struct Config {
     pub appearance: Appearance,
     pub layout: Layout,
     pub dj: DjConfig,
+    pub lyrics: LyricsConfig,
     pub keys: Keybindings,
+    /// Your own cover images, by playlist id ("liked" for Liked Songs). Set them from the app.
+    pub covers: std::collections::BTreeMap<String, String>,
 }
 
 impl Config {
@@ -124,13 +134,21 @@ impl Default for PlaybackConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Appearance {
-    /// A built-in preset: haztify, spotify, nord, gruvbox, catppuccin, dracula, light.
-    /// Any colour set in `colors` overrides the preset.
+    /// A built-in preset (haztify, spotify, apple-music, apple-music-dark, nord, gruvbox,
+    /// catppuccin, dracula, light) or the name of a file in the `themes` folder.
+    /// Any colour set in `colors` overrides the theme.
     pub theme: String,
     pub colors: ColorOverrides,
     pub font_size: f32,
-    /// Leave empty for the default font, or name an installed font family.
+    /// Leave empty for the default font, or name an installed font family or one in the
+    /// `fonts` folder next to this file (.ttf/.otf files there are loaded automatically).
     pub font_family: String,
+    /// Extra font files to load, anywhere on disk.
+    pub font_files: Vec<String>,
+    /// Window and taskbar icon (PNG/JPG). Empty = the built-in icon.
+    pub app_icon: String,
+    /// Tint the accent colour from the current song's cover art.
+    pub accent_from_cover: bool,
     pub corner_radius: f32,
     pub show_album_art: bool,
     /// Compact rows fit more tracks on screen.
@@ -148,12 +166,69 @@ impl Default for Appearance {
             colors: ColorOverrides::default(),
             font_size: 14.0,
             font_family: String::new(),
+            font_files: Vec::new(),
+            app_icon: String::new(),
+            accent_from_cover: false,
             corner_radius: 8.0,
             show_album_art: true,
             compact: false,
             window_width: 1100.0,
             window_height: 720.0,
             renderer: "cpu".into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LyricsAlign {
+    Left,
+    Center,
+}
+
+impl LyricsAlign {
+    pub const ALL: [LyricsAlign; 2] = [LyricsAlign::Left, LyricsAlign::Center];
+}
+
+impl std::fmt::Display for LyricsAlign {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            LyricsAlign::Left => "Left",
+            LyricsAlign::Center => "Centre",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LyricsConfig {
+    /// Where to look, in order: "spotify" (Spotify's own lyrics) and "lrclib" (lrclib.net).
+    pub sources: Vec<String>,
+    /// Light up each word as it's sung, not just the line.
+    pub word_highlight: bool,
+    /// A blurred, darkened copy of the cover art behind the lyrics.
+    pub blurred_background: bool,
+    pub font_size: f32,
+    /// Empty = the app font.
+    pub font_family: String,
+    pub align: LyricsAlign,
+    /// Shift lyrics earlier (negative) or later (positive), in milliseconds.
+    pub offset_ms: i32,
+    /// Lines shown before the current one.
+    pub lines_before: usize,
+}
+
+impl Default for LyricsConfig {
+    fn default() -> Self {
+        Self {
+            sources: vec!["spotify".into(), "lrclib".into()],
+            word_highlight: true,
+            blurred_background: true,
+            font_size: 30.0,
+            font_family: String::new(),
+            align: LyricsAlign::Left,
+            offset_ms: 0,
+            lines_before: 2,
         }
     }
 }
@@ -456,6 +531,7 @@ pub struct Keybindings {
     pub search: String,
     pub toggle_side_panel: String,
     pub dj_now: String,
+    pub lyrics: String,
 }
 
 impl Default for Keybindings {
@@ -471,6 +547,7 @@ impl Default for Keybindings {
             search: "ctrl+f".into(),
             toggle_side_panel: "ctrl+b".into(),
             dj_now: "ctrl+d".into(),
+            lyrics: "ctrl+l".into(),
         }
     }
 }

@@ -102,3 +102,36 @@ pub fn readable_on(bg: Color) -> Color {
     let luminance = 0.2126 * bg.r + 0.7152 * bg.g + 0.0722 * bg.b;
     if luminance > 0.55 { Color::BLACK } else { Color::WHITE }
 }
+
+/// Clickable lyric lines: no background until hovered.
+pub fn lyric_line(colors: Colors, radius: f32) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_, status| {
+        let bg = match status {
+            button::Status::Hovered | button::Status::Pressed => Some(Color { a: 0.07, ..colors.text }),
+            _ => None,
+        };
+        button::Style {
+            background: bg.map(Background::Color),
+            text_color: colors.text,
+            border: Border { radius: radius.into(), ..Border::default() },
+            ..button::Style::default()
+        }
+    }
+}
+
+/// Quiet filled buttons for secondary actions in forms.
+pub fn secondary(colors: Colors, radius: f32) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_, status| {
+        let t = match status {
+            button::Status::Hovered => 0.16,
+            button::Status::Pressed => 0.22,
+            _ => 0.1,
+        };
+        button::Style {
+            background: Some(Background::Color(mix(colors.surface, colors.text, t))),
+            text_color: colors.text,
+            border: Border { radius: radius.into(), ..Border::default() },
+            ..button::Style::default()
+        }
+    }
+}

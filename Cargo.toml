@@ -22,6 +22,8 @@ urlencoding = "2"
 # UI: iced is a pure-Rust native toolkit (wgpu, with a CPU tiny-skia fallback). No webview.
 iced = { version = "0.14", features = ["tokio", "image-without-codecs"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+# Reads family names out of font files you add.
+ttf-parser = { version = "0.25", default-features = false, features = ["std"] }
 
 # Playback: librespot streams and decodes Spotify audio in-process (Premium required).
 librespot-core = { version = "0.8", default-features = false, features = ["rustls-tls-webpki-roots"] }
@@ -30,6 +32,7 @@ librespot-playback = { version = "0.8", default-features = false, features = ["r
 
 # DJ voice playback (mp3/wav from TTS providers).
 rodio = { version = "0.21", default-features = false, features = ["playback", "mp3", "wav"] }
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 
 [profile.release]
 opt-level = 3
@@ -43,8 +46,9 @@ panic = "abort"
 maintainer = "Haz"
 section = "sound"
 depends = "libasound2 | libasound2t64, libxkbcommon0, libxkbcommon-x11-0"
-recommends = "espeak-ng"
+recommends = "espeak-ng, xdg-desktop-portal"
 assets = [
     ["target/release/haztify", "usr/bin/", "755"],
     ["packaging/linux/haztify.desktop", "usr/share/applications/", "644"],
+    ["assets/icon.png", "usr/share/icons/hicolor/256x256/apps/haztify.png", "644"],
 ]

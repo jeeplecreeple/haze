@@ -1,20 +1,22 @@
 //! Application state and update loop.
 
+mod custom;
 mod keys;
 mod style;
 mod view;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use iced::keyboard;
 use iced::widget::image;
-use iced::{Subscription, Task, Theme};
+use iced::{Color, Subscription, Task, Theme, keyboard, window};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use crate::config::{Config, DjMode};
 use crate::dj;
+use crate::lyrics::{self, Lyrics};
 use crate::player::{Audio, PlayerUpdate};
 use crate::queue::{Entry, Origin, Queue};
 use crate::spotify::api::{Api, Playlist, Track};
@@ -33,22 +35,39 @@ pub fn run(config: Config) -> iced::Result {
     let _ = PLAYER_TX.set(tx);
     *PLAYER_RX.lock().expect("player channel") = Some(rx);
 
+    let (fonts, families) = custom::load_fonts(&config.appearance.font_files);
+    if !families.is_empty() {
+        log::info!("loaded fonts: {}", families.join(", "));
+    }
     let mut settings = iced::Settings::default();
     settings.default_text_size = config.appearance.font_size.into();
-    if let Some(family) = crate::config::non_empty(&config.appearance.font_family) {
-        // iced wants a 'static name; this happens once at startup.
-        settings.default_font = iced::Font::with_name(Box::leak(family.to_string().into_boxed_str()));
-    }
-    let size = (config.appearance.window_width, config.appearance.window_height);
+    settings.default_font = custom::font(&config.appearance.font_family);
+    let window = window::Settings {
+        size: iced::Size::new(config.appearance.window_width, config.appearance.window_height),
+        icon: custom::window_icon(&config.appearance.app_icon),
+        // Matches haztify.desktop, which is where Wayland desktops find the icon.
+        #[cfg(target_os = "linux")]
+        platform_specific: window::settings::PlatformSpecific {
+            application_id: "haztify".into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
 
-    iced::application(move || App::new(config.clone()), App::update, App::view)
+    let mut app = iced::application(move || App::new(config.clone(), families.clone()), App::update, App::view)
         .title(App::title)
         .theme(App::theme)
         .subscription(App::subscription)
         .settings(settings)
-        .window_size(size)
-        .run()
+        .window(window);
+    for font in fonts {
+        app = app.font(font);
+    }
+    app.run()
 }
+
+/// The font pickers' label for "no font set".
+pub const DEFAULT_FONT: &str = "Default";
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Page {
@@ -56,6 +75,7 @@ pub enum Page {
     Search,
     Liked,
     Playlist(Playlist),
+    Lyrics,
     Settings,
 }
 
@@ -107,6 +127,13 @@ pub enum Message {
     ClearQueue,
     Image(String, Result<Vec<u8>, String>),
 
+    // Lyrics
+    ToggleLyrics,
+    ToggleFullscreen,
+    LyricsFound(String, Result<Option<Lyrics>, String>),
+    SeekTo(u32),
+    Tick,
+
     // DJ
     DjRequestChanged(String),
     DjStart,
@@ -116,6 +143,16 @@ pub enum Message {
 
     // Settings
     Edit(Edit),
+    PickIcon,
+    IconPicked(Option<PathBuf>),
+    ResetIcon,
+    PickCover(String),
+    CoverPicked(String, Option<PathBuf>),
+    ResetCover(String),
+    PickFont,
+    FontPicked(Option<PathBuf>),
+    FontLoaded(Result<(), iced::font::Error>),
+    OpenConfigFolder,
     SaveSettings,
     ToggleSidePanel,
     DismissNotice,
@@ -131,6 +168,15 @@ pub enum Edit {
     Radius(f32),
     Compact(bool),
     AlbumArt(bool),
+    AccentFromCover(bool),
+    AppFont(String),
+    LyricsFont(String),
+    WordHighlight(bool),
+    BlurredBackground(bool),
+    LyricsAlign(crate::config::LyricsAlign),
+    LyricsSize(f32),
+    LyricsOffset(f32),
+    LinesBefore(f32),
     Sidebar(crate::config::Side),
     SidePanel(crate::config::Side),
     PlayerBar(crate::config::Edge),
@@ -178,6 +224,8 @@ pub struct App {
     pub queue: Queue,
     pub playing: bool,
     pub position_ms: u32,
+    /// When `position_ms` was last updated, to move the lyrics along between player updates.
+    position_at: Instant,
     pub seek_preview: Option<f32>,
     pub volume: u8,
     preloaded: Option<String>,
@@ -185,6 +233,20 @@ pub struct App {
     image_order: Vec<String>,
     pub show_side_panel: bool,
     pub notice: Option<Notice>,
+    previous_page: Page,
+    pub theme_names: Vec<String>,
+    /// Family names of the fonts in the fonts folder and `font_files`.
+    pub font_families: Vec<String>,
+    pub icon: image::Handle,
+
+    pub lyrics: Option<Lyrics>,
+    lyrics_for: Option<String>,
+    pub lyrics_loading: bool,
+    pub fullscreen: bool,
+    /// Cover-derived extras for the current song: the lyrics background and the accent colour.
+    cover_fx_for: Option<String>,
+    pub lyrics_background: Option<image::Handle>,
+    cover_accent: Option<Color>,
 
     pub dj_on: bool,
     pub dj_busy: bool,
@@ -200,7 +262,7 @@ fn err(e: anyhow::Error) -> String {
 }
 
 impl App {
-    fn new(config: Config) -> (Self, Task<Message>) {
+    fn new(config: Config, font_families: Vec<String>) -> (Self, Task<Message>) {
         let colors = theme::resolve(&config.appearance);
         let has_client = crate::config::non_empty(&config.spotify.client_id).is_some();
         let app = Self {
@@ -219,6 +281,7 @@ impl App {
             queue: Queue::default(),
             playing: false,
             position_ms: 0,
+            position_at: Instant::now(),
             seek_preview: None,
             volume: config.playback.volume,
             preloaded: None,
@@ -226,6 +289,17 @@ impl App {
             image_order: Vec::new(),
             show_side_panel: config.layout.show_side_panel,
             notice: None,
+            previous_page: Page::Dj,
+            theme_names: Vec::new(),
+            font_families,
+            icon: icon_handle(&config.appearance.app_icon),
+            lyrics: None,
+            lyrics_for: None,
+            lyrics_loading: false,
+            fullscreen: false,
+            cover_fx_for: None,
+            lyrics_background: None,
+            cover_accent: None,
             dj_on: false,
             dj_busy: false,
             dj_request: String::new(),
@@ -236,6 +310,7 @@ impl App {
             config,
         };
         let mut app = app;
+        app.refresh_theme_names();
         if std::env::var_os("HAZTIFY_DEMO").is_some() {
             app.load_demo();
             return (app, Task::none());
@@ -257,10 +332,120 @@ impl App {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        Subscription::batch([
-            Subscription::run(player_events),
-            keyboard::listen().map(Message::Key),
-        ])
+        let mut subs = vec![Subscription::run(player_events), keyboard::listen().map(Message::Key)];
+        // Redraw often enough for the word highlight, only while synced lyrics are on screen.
+        if self.page == Page::Lyrics && self.playing && self.lyrics.as_ref().is_some_and(|l| l.synced) {
+            let every = if self.config.lyrics.word_highlight { 90 } else { 250 };
+            subs.push(iced::time::every(Duration::from_millis(every)).map(|_| Message::Tick));
+        }
+        Subscription::batch(subs)
+    }
+
+    fn set_position(&mut self, ms: u32) {
+        self.position_ms = ms;
+        self.position_at = Instant::now();
+    }
+
+    /// The playback position right now, estimated between the player's half-second updates.
+    pub fn live_position(&self) -> u32 {
+        if !self.playing {
+            return self.position_ms;
+        }
+        let elapsed = self.position_at.elapsed().as_millis().min(2_000) as u32;
+        self.position_ms + elapsed
+    }
+
+    fn refresh_theme_names(&mut self) {
+        self.theme_names = theme::PRESETS.iter().map(|s| s.to_string()).chain(theme::custom_themes()).collect();
+    }
+
+    /// Recomputes the blurred lyrics background and the cover accent when the song's cover changes.
+    fn update_cover_fx(&mut self, force: bool) {
+        let url = self.queue.current().and_then(|e| e.track.image_url.clone());
+        if !force && url == self.cover_fx_for {
+            return;
+        }
+        let bytes = url.as_ref().and_then(|u| match self.images.get(u) {
+            Some(image::Handle::Bytes(_, bytes)) => Some(bytes.clone()),
+            _ => None,
+        });
+        if url.is_some() && bytes.is_none() {
+            return; // the cover is still downloading; Message::Image calls back
+        }
+        self.cover_fx_for = url;
+        let base = theme::resolve(&self.config.appearance);
+        self.lyrics_background = bytes.as_ref().and_then(|b| custom::blurred_cover(b, base.background));
+        self.cover_accent = bytes.as_ref().and_then(|b| theme::accent_from_image(b));
+        self.refresh_theme();
+    }
+
+    fn set_fullscreen(&mut self, on: bool) -> Task<Message> {
+        if self.fullscreen == on {
+            return Task::none();
+        }
+        self.fullscreen = on;
+        let mode = if on { window::Mode::Fullscreen } else { window::Mode::Windowed };
+        window::latest().and_then(move |id| window::set_mode(id, mode))
+    }
+
+    /// Looks up lyrics for the current song unless they're already loaded or loading.
+    fn fetch_lyrics(&mut self) -> Task<Message> {
+        let Some(track) = self.queue.current().map(|e| e.track.clone()) else {
+            return Task::none();
+        };
+        if self.lyrics_for.as_deref() == Some(track.id.as_str()) {
+            return Task::none();
+        }
+        self.lyrics_for = Some(track.id.clone());
+        self.lyrics = None;
+        self.lyrics_loading = true;
+        let audio = self.audio.clone();
+        let sources = self.config.lyrics.sources.clone();
+        let settings = self.config.playback.clone();
+        let id = track.id.clone();
+        Task::perform(
+            async move {
+                for source in sources {
+                    let found = match source.to_ascii_lowercase().as_str() {
+                        "spotify" => {
+                            let Some(audio) = &audio else { continue };
+                            async {
+                                audio.ensure_connected(&settings).await?;
+                                let json = audio.spotify_lyrics(&track.id).await?;
+                                lyrics::parse_spotify(&track, &json).map(Some)
+                            }
+                            .await
+                        }
+                        "lrclib" => lyrics::lrclib(&track).await,
+                        other => {
+                            log::warn!("unknown lyrics source {other:?}");
+                            continue;
+                        }
+                    };
+                    match found {
+                        Ok(Some(found)) => return Ok(Some(found)),
+                        Ok(None) => {}
+                        Err(e) => log::debug!("lyrics from {source}: {e:#}"),
+                    }
+                }
+                Ok(None)
+            },
+            move |r| Message::LyricsFound(id.clone(), r),
+        )
+    }
+
+    fn apply_icon(&mut self) -> Task<Message> {
+        self.icon = icon_handle(&self.config.appearance.app_icon);
+        let Some(icon) = custom::window_icon(&self.config.appearance.app_icon) else {
+            return Task::none();
+        };
+        window::latest().and_then(move |id| window::set_icon(id, icon.clone()))
+    }
+
+    fn save_quietly(&mut self) {
+        if let Err(e) = self.config.save() {
+            self.notify(format!("Couldn't save config: {e:#}"), true);
+        }
     }
 
     fn notify(&mut self, text: impl Into<String>, error: bool) {
@@ -273,6 +458,11 @@ impl App {
 
     fn refresh_theme(&mut self) {
         self.colors = theme::resolve(&self.config.appearance);
+        if self.config.appearance.accent_from_cover
+            && let Some(accent) = self.cover_accent
+        {
+            self.colors.accent = accent;
+        }
         self.theme = theme::iced_theme(&self.colors);
     }
 
@@ -297,6 +487,23 @@ impl App {
     }
 
     fn load_page(&mut self, page: Page) -> Task<Message> {
+        let leave_fullscreen = if page == Page::Lyrics { Task::none() } else { self.set_fullscreen(false) };
+        if page == Page::Lyrics && self.page != Page::Lyrics {
+            self.previous_page = self.page.clone();
+        }
+        let extra = match &page {
+            Page::Lyrics => self.fetch_lyrics(),
+            Page::Playlist(p) => self.fetch_image(p.image_url.as_ref()),
+            Page::Settings => {
+                self.refresh_theme_names();
+                Task::none()
+            }
+            _ => Task::none(),
+        };
+        Task::batch([leave_fullscreen, extra, self.open_page(page)])
+    }
+
+    fn open_page(&mut self, page: Page) -> Task<Message> {
         self.page = page.clone();
         let Some(api) = self.api.clone() else {
             return Task::none();
@@ -320,7 +527,7 @@ impl App {
                 self.tracks.clear();
                 None
             }
-            Page::Dj | Page::Settings => None,
+            Page::Dj | Page::Settings | Page::Lyrics => None,
         };
         match fetch {
             Some(task) => {
@@ -342,8 +549,10 @@ impl App {
             self.notify("Playback isn't connected yet", true);
             return Task::none();
         };
-        self.position_ms = 0;
+        self.set_position(0);
         self.preloaded = None;
+        self.update_cover_fx(false);
+        let lyrics = if self.page == Page::Lyrics { self.fetch_lyrics() } else { Task::none() };
 
         let intro = match &entry.origin {
             Origin::Dj { intro: Some(intro) } if self.dj_on && self.config.dj.mode != DjMode::Queue => {
@@ -366,7 +575,7 @@ impl App {
             Message::PlayerResult,
         );
 
-        let mut tasks = vec![load, self.fetch_image(entry.track.image_url.as_ref()), self.maybe_refill()];
+        let mut tasks = vec![load, self.fetch_image(entry.track.image_url.as_ref()), lyrics, self.maybe_refill()];
         if let Some(text) = intro {
             tasks.push(self.speak(text, start_playing));
         }
@@ -557,7 +766,7 @@ impl App {
             Message::SeekCommit => {
                 if let (Some(v), Some(audio)) = (self.seek_preview.take(), &self.audio) {
                     audio.seek(v as u32);
-                    self.position_ms = v as u32;
+                    self.set_position(v as u32);
                 }
             }
             Message::SeekStep(delta) => {
@@ -565,7 +774,7 @@ impl App {
                 if let Some(audio) = &self.audio {
                     let target = (self.position_ms as i64 + delta).clamp(0, (duration - 1000).max(0));
                     audio.seek(target as u32);
-                    self.position_ms = target as u32;
+                    self.set_position(target as u32);
                 }
             }
             Message::VolumeStep(delta) => {
@@ -599,8 +808,38 @@ impl App {
                     let old = self.image_order.remove(0);
                     self.images.remove(&old);
                 }
+                self.update_cover_fx(false);
             }
             Message::Image(_, Err(e)) => log::debug!("cover art: {e}"),
+
+            Message::ToggleLyrics => {
+                if self.page == Page::Lyrics {
+                    // Back to where you were, without reloading it.
+                    self.page = self.previous_page.clone();
+                    return self.set_fullscreen(false);
+                }
+                return self.load_page(Page::Lyrics);
+            }
+            Message::ToggleFullscreen => {
+                let on = !self.fullscreen;
+                return self.set_fullscreen(on);
+            }
+            Message::LyricsFound(id, result) => {
+                if self.lyrics_for.as_deref() == Some(id.as_str()) {
+                    self.lyrics_loading = false;
+                    match result {
+                        Ok(found) => self.lyrics = found,
+                        Err(e) => log::warn!("lyrics: {e}"),
+                    }
+                }
+            }
+            Message::SeekTo(ms) => {
+                if let Some(audio) = &self.audio {
+                    audio.seek(ms);
+                }
+                self.set_position(ms);
+            }
+            Message::Tick => {}
 
             Message::DjRequestChanged(s) => self.dj_request = s,
             Message::DjStart => {
@@ -677,6 +916,95 @@ impl App {
             }
 
             Message::Edit(edit) => self.apply_edit(edit),
+            Message::PickIcon => {
+                return Task::perform(custom::pick_image("Choose an app icon"), Message::IconPicked);
+            }
+            Message::IconPicked(None) | Message::CoverPicked(_, None) | Message::FontPicked(None) => {}
+            Message::IconPicked(Some(path)) => match custom::import_image(&path, "icons", "icon", 512) {
+                Ok(saved) => {
+                    custom::remove_imported(&self.config.appearance.app_icon, "icons");
+                    self.config.appearance.app_icon = saved.display().to_string();
+                    self.save_quietly();
+                    if let Err(e) = custom::update_menu_entry(Some(&saved)) {
+                        log::warn!("app menu entry: {e:#}");
+                    }
+                    self.notify(
+                        if cfg!(target_os = "macos") {
+                            "Icon set for the window. To change the Dock icon, use Get Info on Haztify.app in Finder."
+                        } else {
+                            "App icon updated"
+                        },
+                        false,
+                    );
+                    return self.apply_icon();
+                }
+                Err(e) => self.notify(format!("Couldn't use that image: {e:#}"), true),
+            },
+            Message::ResetIcon => {
+                custom::remove_imported(&self.config.appearance.app_icon, "icons");
+                self.config.appearance.app_icon.clear();
+                self.save_quietly();
+                if let Err(e) = custom::update_menu_entry(None) {
+                    log::warn!("app menu entry: {e:#}");
+                }
+                return self.apply_icon();
+            }
+            Message::PickCover(key) => {
+                return Task::perform(
+                    async move { (key, custom::pick_image("Choose a cover").await) },
+                    |(key, path)| Message::CoverPicked(key, path),
+                );
+            }
+            Message::CoverPicked(key, Some(path)) => match custom::import_image(&path, "covers", &key, 640) {
+                Ok(saved) => {
+                    if let Some(old) = self.config.covers.insert(key, saved.display().to_string()) {
+                        custom::remove_imported(&old, "covers");
+                    }
+                    self.save_quietly();
+                }
+                Err(e) => self.notify(format!("Couldn't use that image: {e:#}"), true),
+            },
+            Message::ResetCover(key) => {
+                if let Some(old) = self.config.covers.remove(&key) {
+                    custom::remove_imported(&old, "covers");
+                    self.save_quietly();
+                }
+            }
+            Message::PickFont => return Task::perform(custom::pick_font(), Message::FontPicked),
+            Message::FontPicked(Some(path)) => {
+                let added = std::fs::read(&path).map_err(anyhow::Error::from).and_then(|bytes| {
+                    let family = custom::font_family(&bytes).ok_or_else(|| anyhow::anyhow!("not a font file"))?;
+                    let dir = crate::config::data_dir("fonts")?;
+                    let name = path.file_name().ok_or_else(|| anyhow::anyhow!("no file name"))?;
+                    if path.parent() != Some(dir.as_path()) {
+                        std::fs::copy(&path, dir.join(name))?;
+                    }
+                    Ok((family, bytes))
+                });
+                match added {
+                    Ok((family, bytes)) => {
+                        if !self.font_families.contains(&family) {
+                            self.font_families.push(family.clone());
+                        }
+                        self.notify(format!("Added {family}. Pick it as the app or lyrics font below."), false);
+                        return iced::font::load(bytes).map(Message::FontLoaded);
+                    }
+                    Err(e) => self.notify(format!("Couldn't add that font: {e:#}"), true),
+                }
+            }
+            Message::FontLoaded(result) => {
+                if let Err(e) = result {
+                    log::warn!("font: {e:?}");
+                }
+            }
+            Message::OpenConfigFolder => {
+                if let Some(dir) = crate::config::config_path().ok().and_then(|p| p.parent().map(PathBuf::from)) {
+                    for folder in ["themes", "fonts"] {
+                        let _ = crate::config::data_dir(folder);
+                    }
+                    custom::open_folder(&dir);
+                }
+            }
             Message::SaveSettings => match self.config.save() {
                 Ok(()) => self.notify("Settings saved", false),
                 Err(e) => self.notify(format!("Couldn't save settings: {e:#}"), true),
@@ -684,6 +1012,12 @@ impl App {
             Message::ToggleSidePanel => self.show_side_panel = !self.show_side_panel,
             Message::DismissNotice => self.notice = None,
             Message::Key(event) => {
+                if self.fullscreen
+                    && let keyboard::Event::KeyPressed { key: keyboard::Key::Named(keyboard::key::Named::Escape), .. } =
+                        &event
+                {
+                    return self.set_fullscreen(false);
+                }
                 if let Some(msg) = keys::action(&self.config.keys, &event) {
                     return self.update(msg);
                 }
@@ -698,14 +1032,14 @@ impl App {
         match update {
             PlayerUpdate::Playing { uri, position_ms } if is_current(&uri) => {
                 self.playing = true;
-                self.position_ms = position_ms;
+                self.set_position(position_ms);
             }
             PlayerUpdate::Paused { uri, position_ms } if is_current(&uri) => {
                 self.playing = false;
-                self.position_ms = position_ms;
+                self.set_position(position_ms);
             }
             PlayerUpdate::Position { uri, position_ms } if is_current(&uri) => {
-                self.position_ms = position_ms;
+                self.set_position(position_ms);
                 // Preload the next track near the end for gapless playback.
                 let duration = self.queue.current().map(|e| e.track.duration_ms).unwrap_or(0);
                 if duration > 0 && duration.saturating_sub(position_ms) < 20_000
@@ -736,8 +1070,11 @@ impl App {
 
     fn apply_edit(&mut self, edit: Edit) {
         use Edit::*;
+        let recolour_cover = matches!(edit, Theme(_) | AccentFromCover(_));
         let a = &mut self.config.appearance;
         let dj = &mut self.config.dj;
+        let ly = &mut self.config.lyrics;
+        let font_name = |s: String| if s == DEFAULT_FONT { String::new() } else { s };
         match edit {
             Theme(t) => a.theme = t,
             Accent(c) => a.colors.accent = c,
@@ -745,6 +1082,15 @@ impl App {
             Radius(v) => a.corner_radius = v,
             Compact(v) => a.compact = v,
             AlbumArt(v) => a.show_album_art = v,
+            AccentFromCover(v) => a.accent_from_cover = v,
+            AppFont(s) => a.font_family = font_name(s),
+            LyricsFont(s) => ly.font_family = font_name(s),
+            WordHighlight(v) => ly.word_highlight = v,
+            BlurredBackground(v) => ly.blurred_background = v,
+            LyricsAlign(v) => ly.align = v,
+            LyricsSize(v) => ly.font_size = v,
+            LyricsOffset(v) => ly.offset_ms = v as i32,
+            LinesBefore(v) => ly.lines_before = v as usize,
             Sidebar(s) => self.config.layout.sidebar = s,
             SidePanel(s) => self.config.layout.side_panel = s,
             PlayerBar(e) => self.config.layout.player_bar = e,
@@ -768,6 +1114,9 @@ impl App {
             TtsModel(s) => dj.tts.model = s,
             DuckTo(v) => dj.tts.duck_to = v as u8,
         }
+        if recolour_cover {
+            self.update_cover_fx(true);
+        }
         self.refresh_theme();
     }
 
@@ -787,7 +1136,13 @@ impl App {
         self.user_name = "Haz".into();
         self.playlists = ["Late Night Drive", "Gym", "Focus", "Indie Finds"]
             .iter()
-            .map(|n| Playlist { id: n.to_string(), name: n.to_string(), owner: "Haz".into(), track_count: 42 })
+            .map(|n| Playlist {
+                id: n.to_string(),
+                name: n.to_string(),
+                owner: "Haz".into(),
+                track_count: 42,
+                image_url: None,
+            })
             .collect();
         self.tracks = vec![
             t("Midnight City", "M83", "Hurry Up, We're Dreaming", 243_000),
@@ -796,6 +1151,9 @@ impl App {
             t("Redbone", "Childish Gambino", "Awaken, My Love!", 327_000),
             t("Do I Wanna Know?", "Arctic Monkeys", "AM", 272_000),
         ];
+        // The built-in icon stands in for cover art, so the lyrics background and cover accent show.
+        self.images.insert("demo:cover".into(), image::Handle::from_bytes(custom::BUILTIN_ICON));
+        self.tracks[0].image_url = Some("demo:cover".into());
         let tracks = self.tracks.clone();
         self.queue.play_list(&tracks, 0);
         for (i, e) in tracks.iter().enumerate().skip(1).take(2) {
@@ -804,9 +1162,31 @@ impl App {
         self.page = match std::env::var("HAZTIFY_DEMO").as_deref() {
             Ok("settings") => Page::Settings,
             Ok("tracks") => Page::Liked,
+            Ok("lyrics") => Page::Lyrics,
             _ => Page::Dj,
         };
-        self.position_ms = 81_000;
+        let lines = [
+            "City lights are humming low",
+            "Every window holds a glow",
+            "We keep driving, we don't know",
+            "Where the night is gonna go",
+            "Turn it up and let it ride",
+            "Static singing on the side",
+            "Hold the moment, hold it tight",
+            "We were made for one more night",
+        ];
+        let lrc: String = lines
+            .iter()
+            .enumerate()
+            .map(|(i, l)| {
+                let ms = 70_000 + i as u32 * 4_200;
+                format!("[{:02}:{:05.2}]{l}\n", ms / 60_000, (ms % 60_000) as f32 / 1000.0)
+            })
+            .collect();
+        self.lyrics = lyrics::parse_lrc(&tracks[0], &lrc, "the demo");
+        self.lyrics_for = Some(tracks[0].id.clone());
+        self.set_position(81_000);
+        self.update_cover_fx(true);
         self.playing = true;
         self.dj_on = true;
         self.dj_log = vec![
@@ -817,6 +1197,13 @@ impl App {
 
     pub fn has_audio(&self) -> bool {
         self.audio.is_some()
+    }
+}
+
+fn icon_handle(path: &str) -> image::Handle {
+    match crate::config::non_empty(path) {
+        Some(p) if std::path::Path::new(p).exists() => image::Handle::from_path(p),
+        _ => image::Handle::from_bytes(custom::BUILTIN_ICON),
     }
 }
 

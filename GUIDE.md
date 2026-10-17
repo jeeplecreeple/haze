@@ -13,8 +13,9 @@ Spotify only lets Premium accounts stream audio through third-party apps.
 - [3. Log in](#3-log-in)
 - [4. Find your music](#4-find-your-music)
 - [5. Set up the DJ](#5-set-up-the-dj)
-- [6. Make it yours](#6-make-it-yours)
-- [7. Troubleshooting](#7-troubleshooting)
+- [6. Lyrics](#6-lyrics)
+- [7. Make it yours](#7-make-it-yours)
+- [8. Troubleshooting](#8-troubleshooting)
 
 ## 1. Install
 
@@ -190,7 +191,25 @@ Each set is one request to your provider plus a few Spotify searches. With a sma
 fraction of a cent. Larger models cost more per set; check your provider's pricing. Local models
 through Ollama or LM Studio are free.
 
-## 6. Make it yours
+## 6. Lyrics
+
+Click **♪** in the player bar, **♪ Lyrics** in the sidebar, or press `Ctrl+L`. Press it again to go
+back to where you were.
+
+- The line being sung is bold, and each word lights up as it's sung.
+- Click any line to jump the song there.
+- Long instrumental breaks show three dots that fill up until the singing starts again.
+- **⛶ Full screen** hides everything but the lyrics and the player bar. `Esc` leaves it.
+
+Haztify asks Spotify for the lyrics first and then [LRCLIB](https://lrclib.net), a free community
+database, so songs Spotify has no lyrics for often still get them. When only plain lyrics exist,
+they're shown without the highlight.
+
+**Settings → Lyrics** has the options: word-by-word highlight, the blurred cover background,
+left or centred lines, the lyrics font and size, how many past lines stay on screen, and a timing
+offset if the lyrics run early or late for you.
+
+## 7. Make it yours
 
 **Settings → Appearance and Layout** covers the common options and applies them immediately; click
 **Save settings** to keep them. Everything else is in the config file, whose path is shown at the
@@ -206,8 +225,9 @@ top of Settings:
 
 ```toml
 [appearance]
-theme = "catppuccin"        # haztify, spotify, nord, gruvbox, catppuccin, dracula, light
-font_family = "Inter"       # any installed font
+theme = "apple-music-dark"  # haztify, spotify, apple-music, apple-music-dark, nord, gruvbox,
+                            # catppuccin, dracula, light, or your own theme file
+font_family = "Inter"       # any installed font, or one you added
 compact = true
 
 [appearance.colors]
@@ -225,7 +245,45 @@ play_pause = "space"
 Font family, text size and window size apply after a restart. Edit the file while Haztify is closed,
 because the Settings page saves over it.
 
-## 7. Troubleshooting
+### Your own theme
+
+**Settings → Appearance → Open folder** opens the folder next to the config file. Make a `themes`
+folder there (Haztify creates it the first time you click the button) and add a file such as
+`themes/ocean.toml`:
+
+```toml
+base = "apple-music-dark"   # the built-in theme to start from
+background = "#0b1d2e"
+surface = "#10263a"
+accent = "#0a84ff"
+# also: text, muted_text, danger
+```
+
+It then shows up in the **Theme** list as `ocean`. Turn on **Accent from cover art** to have the
+accent colour follow whatever is playing.
+
+### Your own fonts
+
+Click **Add font file…** and pick a `.ttf` or `.otf` file. Haztify copies it into its `fonts`
+folder and adds it to the **App font** and **Lyrics font** lists. The lyrics font changes right
+away; the app font changes after a restart. Any font installed on your system works too: type its
+name under **…or an installed font**.
+
+### Your own app icon
+
+**Settings → Appearance → App icon → Choose image…** takes a PNG or JPG (square works best). It
+becomes the window and taskbar icon straight away. On Linux Haztify also writes a menu entry for
+you (`~/.local/share/applications/haztify.desktop`) so the launcher and Wayland docks use it too.
+On macOS this only changes the window icon; to change the Dock icon, select Haztify.app in Finder,
+choose **Get Info**, and paste your image onto the small icon at the top. **Reset** goes back to
+the built-in icon.
+
+### Your own playlist covers
+
+Open a playlist or Liked Songs and click **Change cover…** to use any image as its cover in
+Haztify. This only changes it in Haztify, not on Spotify. **Reset cover** puts Spotify's back.
+
+## 8. Troubleshooting
 
 | Problem | Fix |
 | --- | --- |
@@ -236,5 +294,7 @@ because the Settings page saves over it.
 | "No API key for the DJ" | Add the key in Settings, or set the environment variable from the table above and restart. |
 | DJ says its picks couldn't be found | The model named songs Spotify doesn't have. Try again, or try a larger model. |
 | No spoken intros on Linux | Install `espeak-ng` or `speech-dispatcher`, or switch to OpenAI-compatible TTS. |
+| **Choose image…** or **Add font file…** does nothing (Linux) | The file picker comes from your desktop's portal. GNOME and KDE have one; on other setups install `xdg-desktop-portal` plus a backend such as `xdg-desktop-portal-gtk`. |
+| No lyrics for a song | Neither Spotify nor LRCLIB has them. Lyrics that run early or late can be fixed with **Timing offset** in Settings → Lyrics. |
 | Window is blank or flickers | Set `renderer = "cpu"` under `[appearance]` (the default). If you set `"gpu"`, your graphics driver may not support it. |
 | Something else | Run Haztify from a terminal with `RUST_LOG=haztify=debug` to see what it's doing, and include that output in an [issue](https://github.com/jeeplecreeple/haztify/issues/new). |

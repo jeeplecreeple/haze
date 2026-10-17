@@ -66,7 +66,7 @@ pub fn action(keys: &Keybindings, event: &keyboard::Event) -> Option<Message> {
     }
     let name = key_name(key)?;
     let m = *modifiers;
-    let table: [(&str, fn() -> Message); 10] = [
+    let table: [(&str, fn() -> Message); 11] = [
         (&keys.play_pause, || Message::TogglePlay),
         (&keys.next, || Message::Next),
         (&keys.previous, || Message::Previous),
@@ -77,6 +77,7 @@ pub fn action(keys: &Keybindings, event: &keyboard::Event) -> Option<Message> {
         (&keys.search, || Message::Open(Page::Search)),
         (&keys.toggle_side_panel, || Message::ToggleSidePanel),
         (&keys.dj_now, || Message::DjStart),
+        (&keys.lyrics, || Message::ToggleLyrics),
     ];
     table.iter().find(|(spec, _)| matches(spec, &name, m)).map(|(_, f)| f())
 }
