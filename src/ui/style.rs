@@ -33,22 +33,23 @@ pub fn panel(colors: Colors, radius: f32) -> impl Fn(&Theme) -> container::Style
 }
 
 /// A panel that lets the window's ambient cover colours show through (`opacity` below 1), with a
-/// hairline edge and a soft drop shadow so it floats over the background.
+/// hairline edge (no shadow; see `art_edge`).
 pub fn glass(colors: Colors, radius: f32, opacity: f32) -> impl Fn(&Theme) -> container::Style {
     move |_| container::Style {
         background: Some(Background::Color(alpha(colors.surface, opacity))),
         text_color: Some(colors.text),
         border: Border { radius: radius.into(), width: 1.0, color: alpha(colors.text, 0.06) },
-        shadow: Shadow { color: alpha(Color::BLACK, 0.28), offset: Vector::new(0.0, 6.0), blur_radius: 22.0 },
         ..container::Style::default()
     }
 }
 
-/// A soft shadow under cover art.
-pub fn art_shadow(radius: f32) -> impl Fn(&Theme) -> container::Style {
+/// A hairline edge around cover art.
+///
+/// No drop shadows in the main window: the CPU renderer only repaints what changed and doesn't
+/// count a shadow as part of its widget, so shadows leave stale or black patches behind.
+pub fn art_edge(radius: f32) -> impl Fn(&Theme) -> container::Style {
     move |_| container::Style {
-        border: Border { radius: radius.into(), ..Border::default() },
-        shadow: Shadow { color: alpha(Color::BLACK, 0.45), offset: Vector::new(0.0, 10.0), blur_radius: 28.0 },
+        border: Border { radius: radius.into(), width: 1.0, color: alpha(Color::WHITE, 0.08) },
         ..container::Style::default()
     }
 }
@@ -97,8 +98,7 @@ pub fn gradient_tile(colors: Colors, radius: f32) -> impl Fn(&Theme) -> containe
         container::Style {
             background: Some(Background::Gradient(Gradient::Linear(gradient))),
             text_color: Some(readable_on(colors.accent)),
-            border: Border { radius: radius.into(), ..Border::default() },
-            shadow: Shadow { color: alpha(Color::BLACK, 0.45), offset: Vector::new(0.0, 10.0), blur_radius: 28.0 },
+            border: Border { radius: radius.into(), width: 1.0, color: alpha(Color::WHITE, 0.12) },
             ..container::Style::default()
         }
     }
@@ -205,8 +205,7 @@ pub fn primary(colors: Colors, radius: f32) -> impl Fn(&Theme, button::Status) -
         button::Style {
             background: Some(Background::Color(bg)),
             text_color: readable_on(colors.accent),
-            border: Border { radius: radius.into(), ..Border::default() },
-            shadow: Shadow { color: alpha(colors.accent, 0.35), offset: Vector::new(0.0, 4.0), blur_radius: 14.0 },
+            border: Border { radius: radius.into(), width: 1.0, color: mix(colors.accent, Color::WHITE, 0.25) },
             ..button::Style::default()
         }
     }
@@ -248,7 +247,7 @@ pub fn icon_button(colors: Colors, active: bool) -> impl Fn(&Theme, button::Stat
     }
 }
 
-/// The round play/pause button: the accent colour, glowing a little.
+/// The round play/pause button: the accent colour with a lighter rim.
 pub fn play_button(colors: Colors) -> impl Fn(&Theme, button::Status) -> button::Style {
     move |_, status| {
         let bg = match status {
@@ -257,12 +256,10 @@ pub fn play_button(colors: Colors) -> impl Fn(&Theme, button::Status) -> button:
             button::Status::Disabled => mix(colors.accent, colors.surface, 0.6),
             button::Status::Active => colors.accent,
         };
-        let glow = if matches!(status, button::Status::Disabled) { 0.0 } else { 0.45 };
         button::Style {
             background: Some(Background::Color(bg)),
             text_color: readable_on(colors.accent),
-            border: Border { radius: 999.0.into(), ..Border::default() },
-            shadow: Shadow { color: alpha(colors.accent, glow), offset: Vector::new(0.0, 3.0), blur_radius: 16.0 },
+            border: Border { radius: 999.0.into(), width: 1.0, color: mix(bg, Color::WHITE, 0.25) },
             ..button::Style::default()
         }
     }

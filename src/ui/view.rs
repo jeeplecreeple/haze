@@ -564,7 +564,7 @@ impl App {
         match (self.config.appearance.show_album_art, handle) {
             (true, Some(h)) => {
                 let art = image(h.clone()).width(size).height(size).content_fit(ContentFit::Cover).border_radius(self.r() * 0.75);
-                if size >= 100.0 { container(art).style(style::art_shadow(self.r() * 0.75)).into() } else { art.into() }
+                if size >= 100.0 { container(art).style(style::art_edge(self.r() * 0.75)).into() } else { art.into() }
             }
             (true, None) => container(icon(icon::MUSIC, size * 0.4).color(self.colors.muted_text))
                 .center(size)
@@ -585,7 +585,7 @@ impl App {
     fn collection_cover(&self, key: &str, url: Option<&str>, size: f32) -> El<'_> {
         match self.collection_handle(key, url) {
             Some(h) => container(image(h).width(size).height(size).content_fit(ContentFit::Cover).border_radius(self.r()))
-                .style(style::art_shadow(self.r()))
+                .style(style::art_edge(self.r()))
                 .into(),
             None => {
                 let glyph = if key == "liked" { icon::HEART } else { icon::MUSIC };
