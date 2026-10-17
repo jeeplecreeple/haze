@@ -539,10 +539,12 @@ pub enum TtsEngine {
     System,
     /// An OpenAI-compatible `/audio/speech` endpoint.
     OpenAI,
+    /// Piper, a free natural-sounding voice that runs on this computer.
+    Piper,
 }
 
 impl TtsEngine {
-    pub const ALL: [TtsEngine; 2] = [TtsEngine::System, TtsEngine::OpenAI];
+    pub const ALL: [TtsEngine; 3] = [TtsEngine::System, TtsEngine::Piper, TtsEngine::OpenAI];
 }
 
 impl std::fmt::Display for TtsEngine {
@@ -550,6 +552,7 @@ impl std::fmt::Display for TtsEngine {
         f.write_str(match self {
             TtsEngine::System => "System voice",
             TtsEngine::OpenAI => "OpenAI-compatible TTS",
+            TtsEngine::Piper => "Piper (natural, offline)",
         })
     }
 }
@@ -640,7 +643,10 @@ impl DjConfig {
 pub struct TtsConfig {
     pub engine: TtsEngine,
     /// System: a voice name your OS knows (empty = default). OpenAI: alloy, echo, nova, onyx, shimmer...
+    /// Piper: a voice file (.onnx); empty = the English voice Haze downloads for you.
     pub voice: String,
+    /// The Piper program. Empty = look for `piper-tts` or `piper` in the usual places.
+    pub piper_path: String,
     pub model: String,
     /// Empty = reuse the DJ's base URL and key when the provider is OpenAI-compatible.
     pub base_url: String,
@@ -654,6 +660,7 @@ impl Default for TtsConfig {
         Self {
             engine: TtsEngine::System,
             voice: String::new(),
+            piper_path: String::new(),
             model: "gpt-4o-mini-tts".into(),
             base_url: String::new(),
             api_key_env: String::new(),

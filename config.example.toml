@@ -85,8 +85,9 @@ language = "English"
 temperature = 0.9         # OpenAI-compatible and Gemini only
 
 [dj.tts]
-engine = "system"         # system = OS voice | openai = OpenAI-compatible /audio/speech
-voice = ""                # system: an OS voice name; openai: alloy, nova, onyx, shimmer...
+engine = "system"         # system = OS voice | piper = natural offline voice | openai = OpenAI-compatible /audio/speech
+voice = ""                # system: an OS voice name; piper: a .onnx voice file (empty = downloaded English voice); openai: alloy, nova...
+piper_path = ""           # empty = find piper-tts or piper by itself
 model = "gpt-4o-mini-tts"
 base_url = ""             # empty = the DJ's OpenAI-compatible URL, else api.openai.com
 api_key_env = ""          # empty = the DJ's key (openai provider) or OPENAI_API_KEY

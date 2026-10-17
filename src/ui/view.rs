@@ -22,6 +22,9 @@ fn mmss(ms: u32) -> String {
     format!("{}:{:02}", s / 60, s % 60)
 }
 
+/// Shown under the DJ provider picker: in Haz's testing these gave the best picks and intros.
+const PROVIDER_TIP: &str = "Tip: Groq (free) or Ollama (on your computer) usually work best.";
+
 /// The gap between panels, and their inner padding.
 const GAP: f32 = 8.0;
 
@@ -1208,6 +1211,7 @@ impl App {
 
         let dj_rows = vec![
             self.setting("Provider", self.picker(LlmProvider::ALL, Some(dj.provider), |p| Message::Edit(Edit::Provider(p)))),
+            self.muted(PROVIDER_TIP).size(self.fs(0.85)).into(),
             self.field("Model", dj.provider.default_model(), &dj.model, Edit::Model),
             self.field("API base URL", dj.provider.default_base_url(), &dj.base_url, Edit::BaseUrl),
             self.setting(
@@ -1226,12 +1230,28 @@ impl App {
             self.number("Discovery (new vs. familiar)", dj.discovery as f32, 0.0..=100.0, Edit::Discovery),
             self.toggle("Explicit songs", dj.allow_explicit, Edit::Explicit),
         ];
-        let voice_rows = vec![
-            self.setting("Voice engine", self.picker(TtsEngine::ALL, Some(dj.tts.engine), |e| Message::Edit(Edit::TtsEngine(e)))),
-            self.field("Voice", "default", &dj.tts.voice, Edit::Voice),
-            self.field("TTS model", "gpt-4o-mini-tts", &dj.tts.model, Edit::TtsModel),
-            self.number("Music volume while talking %", dj.tts.duck_to as f32, 0.0..=100.0, Edit::DuckTo),
-        ];
+        let mut voice_rows =
+            vec![self.setting("Voice engine", self.picker(TtsEngine::ALL, Some(dj.tts.engine), |e| Message::Edit(Edit::TtsEngine(e))))];
+        match dj.tts.engine {
+            TtsEngine::System => voice_rows.push(self.field("Voice", "default", &dj.tts.voice, Edit::Voice)),
+            TtsEngine::OpenAI => {
+                voice_rows.push(self.field("Voice", "nova", &dj.tts.voice, Edit::Voice));
+                voice_rows.push(self.field("TTS model", "gpt-4o-mini-tts", &dj.tts.model, Edit::TtsModel));
+            }
+            TtsEngine::Piper => {
+                voice_rows.push(self.setting(
+                    "Voice file",
+                    row![
+                        self.input("English voice Haze downloads", &dj.tts.voice).on_input(|s| Message::Edit(Edit::Voice(s))),
+                        self.small_button(Some(icon::FOLDER_OPEN), "Choose…", Message::PickVoice),
+                    ]
+                    .spacing(8)
+                    .align_y(Alignment::Center),
+                ));
+                voice_rows.push(self.field("Piper program", "found automatically", &dj.tts.piper_path, Edit::PiperPath));
+            }
+        }
+        voice_rows.push(self.number("Music volume while talking %", dj.tts.duck_to as f32, 0.0..=100.0, Edit::DuckTo));
         let icon_controls = column![
             self.icon_picker(34.0),
             self.small_button(Some(icon::IMAGE), "Use your own image…", Message::PickIcon),

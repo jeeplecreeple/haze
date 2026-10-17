@@ -284,6 +284,10 @@ pub enum Message {
     CoverPicked(String, Option<PathBuf>),
     ResetCover(String),
     PickFont,
+    PickVoice,
+    VoicePicked(Option<PathBuf>),
+    /// The default Piper voice finished downloading (or failed to).
+    PiperVoiceReady(Result<(), String>),
     FontPicked(Option<PathBuf>),
     FontLoaded(Result<(), iced::font::Error>),
     OpenConfigFolder,
@@ -333,6 +337,7 @@ pub enum Edit {
     Explicit(bool),
     TtsEngine(crate::config::TtsEngine),
     Voice(String),
+    PiperPath(String),
     TtsModel(String),
     DuckTo(f32),
     CheckUpdates(bool),
@@ -401,8 +406,10 @@ pub struct App {
     dj_opened: bool,
     pub speaking: bool,
     resume_after_speech: bool,
-    /// The system voice is missing (Linux without espeak-ng), so intros aren't spoken.
+    /// The system voice or Piper is missing, so intros aren't spoken.
     no_system_voice: bool,
+    /// The default Piper voice was downloaded this run.
+    piper_voice_ready: bool,
 }
 
 fn err(e: anyhow::Error) -> String {
@@ -462,6 +469,7 @@ impl App {
             speaking: false,
             resume_after_speech: false,
             no_system_voice: false,
+            piper_voice_ready: false,
             config,
         };
         let mut app = app;
@@ -867,7 +875,7 @@ impl App {
         let Some(audio) = self.audio.clone() else {
             return Task::none();
         };
-        if self.no_system_voice && self.config.dj.tts.engine == crate::config::TtsEngine::System {
+        if self.no_system_voice && self.config.dj.tts.engine != crate::config::TtsEngine::OpenAI {
             return if music_playing { Task::none() } else { Task::done(Message::SpeechDone(Ok(()))) };
         }
         self.speaking = true;
@@ -1248,7 +1256,7 @@ impl App {
                 }
                 match result {
                     // Said once; after that the DJ just talks on screen.
-                    Err(e) if e == dj::tts::NO_SYSTEM_VOICE => {
+                    Err(e) if e == dj::tts::NO_SYSTEM_VOICE || e == dj::tts::NO_PIPER => {
                         self.no_system_voice = true;
                         self.notify(e, false);
                     }
@@ -1258,7 +1266,16 @@ impl App {
             }
 
             Message::Edit(edit) => {
+                let picked_piper = matches!(edit, Edit::TtsEngine(crate::config::TtsEngine::Piper));
                 self.apply_edit(edit);
+                // Fetch the default voice now, so the first intro isn't held up by the download.
+                if picked_piper && self.config.dj.tts.voice.trim().is_empty() && !self.piper_voice_ready {
+                    self.notify("Downloading a Piper voice (about 60 MB)…", false);
+                    return Task::perform(
+                        async { dj::tts::download_piper_voice().await.map(|_| ()).map_err(err) },
+                        Message::PiperVoiceReady,
+                    );
+                }
                 // Picks up a change of lyrics provider (a no-op when the lyrics are current).
                 if self.page == Page::Lyrics {
                     return self.fetch_lyrics();
@@ -1327,6 +1344,24 @@ impl App {
                 });
             }
             Message::PickFailed(e) => self.notify(e, true),
+            Message::PickVoice => {
+                return Task::perform(custom::pick_voice(), |r| match r {
+                    Ok(path) => Message::VoicePicked(path),
+                    Err(e) => Message::PickFailed(e),
+                });
+            }
+            Message::VoicePicked(None) => {}
+            Message::VoicePicked(Some(path)) => {
+                self.config.dj.tts.voice = path.display().to_string();
+                if !path.with_extension("onnx.json").is_file() {
+                    self.notify("Piper also needs the matching .onnx.json file next to that voice.", true);
+                }
+            }
+            Message::PiperVoiceReady(Ok(())) => {
+                self.piper_voice_ready = true;
+                self.notify("Piper voice ready. Click Save settings to keep it.", false);
+            }
+            Message::PiperVoiceReady(Err(e)) => self.notify(format!("Couldn't download the Piper voice: {e}"), true),
             Message::FileDropped(path) => return self.file_dropped(path),
             Message::FontPicked(Some(path)) => {
                 let added = std::fs::read(&path).map_err(anyhow::Error::from).and_then(|bytes| {
@@ -1532,6 +1567,7 @@ impl App {
                 self.no_system_voice = false;
             }
             Voice(s) => dj.tts.voice = s,
+            PiperPath(s) => dj.tts.piper_path = s,
             TtsModel(s) => dj.tts.model = s,
             DuckTo(v) => dj.tts.duck_to = v as u8,
             CheckUpdates(v) => self.config.updates.check = v,

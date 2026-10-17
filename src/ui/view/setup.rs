@@ -8,8 +8,9 @@ use iced::{Alignment, Background, Border, Color, Fill, Font, Length, Padding, fo
 
 use super::super::icon::{self, icon};
 use super::super::{App, Edit, Login, Message, Setup, SetupStep, style};
-use super::El;
+use super::{El, PROVIDER_TIP};
 use crate::config::{DjMode, LlmProvider};
+
 use crate::theme::{self, PRESETS};
 
 const GREETINGS: [&str; 12] =
@@ -341,6 +342,7 @@ impl App {
         .spacing(6);
         let form = column![
             self.setting("Provider", self.picker(LlmProvider::ALL, Some(dj.provider), |p| Message::Edit(Edit::Provider(p)))),
+            self.muted(PROVIDER_TIP).size(self.fs(0.82)),
             self.setting("What the DJ does", self.picker(DjMode::ALL, Some(dj.mode), |m| Message::Edit(Edit::Mode(m)))),
             key,
         ]

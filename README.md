@@ -11,6 +11,7 @@ that runs on **your own** LLM API key.
   (optionally) introduces them like a radio host, as text or out loud.
 - **Bring your own model.** OpenAI, Anthropic Claude, Google Gemini, Mistral, Groq, OpenRouter,
   DeepSeek, xAI, Cerebras, a local Ollama, or anything else OpenAI-compatible (Together, LM Studio...).
+  Groq (free) and Ollama (local) usually give the best results.
 - **Synced lyrics.** A karaoke-style lyrics view in the spirit of Spicy Lyrics: words light up as
   they're sung with a shine on the edge, lines glide into place, a blurred cover-art background,
   instrumental-break dots, click a line to jump there, full screen. Lyrics come from Spotify and
@@ -54,8 +55,8 @@ Get the latest build from [Releases](https://github.com/jeeplecreeple/haze/relea
    and the DJ's AI provider, and logs you in through the browser. Your login is cached, so next
    time it starts straight into your library.
 3. To use the DJ, open **Settings → DJ**, pick a provider and add your API key (or set the usual
-   environment variable such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` and
-   leave the key field empty). Then hit **Start DJ**.
+   environment variable such as `GROQ_API_KEY` or `OPENAI_API_KEY` and leave the key field
+   empty). Groq or Ollama will likely give you the best experience. Then hit **Start DJ**.
 
 ## The DJ
 
@@ -67,7 +68,7 @@ Get the latest build from [Releases](https://github.com/jeeplecreeple/haze/relea
 | Discovery | 0 = your favourites, 100 = all new to you |
 | Personality, name, language, max words | How it sounds |
 | Explicit songs | Filter explicit tracks out |
-| Voice engine | Your OS voice (`say` on macOS, SAPI on Windows, `espeak-ng`/`spd-say` on Linux) or any OpenAI-compatible `/audio/speech` API |
+| Voice engine | Your OS voice (`say` on macOS, SAPI on Windows, `espeak-ng`/`spd-say` on Linux), Piper (a free, natural voice that runs on your computer), or any OpenAI-compatible `/audio/speech` API |
 | Music volume while talking | Ducks the music under the voice; 0 pauses it instead |
 
 Type a mood into the DJ box ("rainy Sunday jazz", "2000s pop-punk, no ballads") and press

@@ -89,6 +89,10 @@ pub async fn pick_font() -> Result<Option<PathBuf>, String> {
     pick_file("Add a font", "Fonts", &["ttf", "otf", "ttc"]).await
 }
 
+pub async fn pick_voice() -> Result<Option<PathBuf>, String> {
+    pick_file("Choose a Piper voice", "Piper voices", &["onnx"]).await
+}
+
 /// Shows a file picker. `Ok(None)` means you cancelled it.
 async fn pick_file(title: &str, kind: &str, types: &[&str]) -> Result<Option<PathBuf>, String> {
     let asked = std::time::Instant::now();

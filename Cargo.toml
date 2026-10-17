@@ -1,6 +1,6 @@
 [package]
 name = "haze"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2024"
 description = "A native, lightweight, heavily customisable Spotify client with an AI DJ"
 license = "MIT"
@@ -15,7 +15,7 @@ rand = "0.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "fs", "io-util"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 urlencoding = "2"
 

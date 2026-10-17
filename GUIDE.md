@@ -47,7 +47,8 @@ makepkg -Csi
 ```
 
 Haze then shows up in your app launcher. If you use `rustup`, leave `rust` out of the first line.
-For spoken DJ intros with the system voice, also install `espeak-ng`.
+For spoken DJ intros, install Piper (`yay -S piper-tts-bin`) for a natural voice, or `espeak-ng`
+for the robotic system voice. See [Spoken intros](#spoken-intros).
 
 To update later:
 
@@ -148,8 +149,12 @@ either paste a key into **API key** or leave it empty and set the environment va
 | Cerebras (free tier) | <https://cloud.cerebras.ai> | `CEREBRAS_API_KEY` |
 | Ollama (on your computer) | No key. Install from <https://ollama.com> and run `ollama pull llama3.2` | |
 
-Each one already knows its address and a sensible model, so a key is all it needs. Groq, Cerebras
-and OpenRouter's free models cost nothing and are a good pick when Gemini is busy. OpenRouter's
+Each one already knows its address and a sensible model, so a key is all it needs.
+
+**You'll likely get the best experience with Groq or Ollama.** In testing, OpenAI, Mistral and
+Gemini often didn't work as well: they picked songs Spotify couldn't find, or were busy. Groq is
+free and fast; Ollama runs on your own computer, so it's free and private too. Cerebras and
+OpenRouter's free models also cost nothing. OpenRouter's
 default model, `openrouter/free`, sends each request to whichever free model is available.
 
 If a model name stops working (providers retire old ones), Haze asks the provider which models it
@@ -200,9 +205,24 @@ Choose the **Voice engine** under **DJ voice**:
 - **System voice** (the default) uses your computer's built-in speech: `say` on macOS, Windows' own
   voices, and `espeak-ng` or `spd-say` on Linux (install one, for example
   `sudo apt install espeak-ng`). Leave **Voice** empty for the default voice, or type the name of
-  one your system has.
-- **OpenAI-compatible TTS** sounds much more natural. It uses your OpenAI key, and **Voice** can be
-  `alloy`, `nova`, `onyx`, `shimmer` and others.
+  one your system has. On Linux this sounds quite robotic.
+- **Piper (natural, offline)** sounds far more like a person, runs on your own computer, and is
+  free. It works on Linux and macOS (Windows too). Install it once:
+
+  | System | Command |
+  | --- | --- |
+  | Arch | `yay -S piper-tts-bin` |
+  | Debian, Ubuntu, Fedora, others | `sudo apt install pipx` (or your system's pipx package), then `pipx install piper-tts` |
+  | macOS | `brew install pipx`, then `pipx install piper-tts` |
+
+  Then choose **Piper** as the voice engine. The first time, Haze downloads a clear US English
+  voice (about 60 MB) into its `voices` folder. For another voice or language, download a `.onnx`
+  file **and** its `.onnx.json` from <https://huggingface.co/rhasspy/piper-voices> (you can listen to
+  them at <https://rhasspy.github.io/piper-samples>), put both in the same folder, and click
+  **Choose…** next to **Voice file**. If Haze can't find Piper, put its full path in **Piper
+  program** (run `which piper` in a terminal to see it).
+- **OpenAI-compatible TTS** uses your OpenAI key, and **Voice** can be `alloy`, `nova`, `onyx`,
+  `shimmer` and others. It costs a little per intro.
 
 **Music volume while talking** turns the music down under the voice. Set it to 0 to pause instead.
 
@@ -353,7 +373,8 @@ You can change any of them under `[keys]` in the config file.
 | Spotify returns 403 for your account | Your Spotify app is in development mode, which only allows accounts listed under **User Management** on the dashboard. Add your account's email there. |
 | "No API key for the DJ" | Add the key in Settings, or set the environment variable from [the table above](#add-an-api-key) and restart. |
 | The DJ says its picks couldn't be found | The model named songs Spotify doesn't have. Try again, or use a larger model. |
-| No spoken intros on Linux | Haze says so once and the DJ talks on screen instead. Install `espeak-ng` (`sudo pacman -S espeak-ng` on Arch) or `speech-dispatcher`, or switch to OpenAI-compatible TTS. |
+| No spoken intros | Haze says so once and the DJ talks on screen instead. Install Piper (see [Spoken intros](#spoken-intros)) and choose it again in Settings, or install `espeak-ng` (`sudo pacman -S espeak-ng` on Arch). |
+| The DJ's picks are poor or it often fails | Switch the provider to Groq or Ollama, which usually work best. |
 | "Haze couldn't open a file picker" (Linux) | The file picker comes from your desktop's portal. GNOME and KDE have one; elsewhere (Hyprland, Sway, i3) install `xdg-desktop-portal-gtk`, or `zenity`. Until then, drag the file onto the Haze window. |
 | A playlist says Spotify won't let Haze open it | Spotify blocks developer apps from some playlists (its own mixes, and some made by other people). Haze retries with its playback login, which usually works; if it doesn't, save the songs to a playlist of your own. |
 | No lyrics for a song | Neither Spotify nor LRCLIB has them. For lyrics that run early or late, use **Timing offset** in Settings → Lyrics. |
