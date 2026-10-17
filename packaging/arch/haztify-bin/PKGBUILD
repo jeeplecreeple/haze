@@ -1,0 +1,30 @@
+# Installs the prebuilt release binary (no compiling). Ready for the AUR as "haztify-bin".
+# Needs the GitHub repo to be public so the release download works without a login.
+# Maintainer: Haz
+pkgname=haztify-bin
+_pkgname=haztify
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Native, lightweight, customisable Spotify client with an AI DJ (prebuilt)"
+arch=('x86_64' 'aarch64')
+url="https://github.com/jeeplecreeple/haztify"
+license=('MIT')
+depends=('alsa-lib' 'libxkbcommon' 'libxkbcommon-x11' 'gcc-libs' 'glibc')
+optdepends=('espeak-ng: spoken DJ intros with the system voice'
+            'speech-dispatcher: alternative system voice for spoken DJ intros'
+            'vulkan-icd-loader: GPU renderer (renderer = "gpu")')
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+source_x86_64=("$_pkgname-$pkgver-x86_64.tar.gz::$url/releases/download/v$pkgver/haztify-linux-x86_64.tar.gz")
+source_aarch64=("$_pkgname-$pkgver-aarch64.tar.gz::$url/releases/download/v$pkgver/haztify-linux-arm64.tar.gz")
+# Run `updpkgsums` after each release to fill these in.
+sha256sums_x86_64=('SKIP')
+sha256sums_aarch64=('SKIP')
+
+package() {
+  cd "$srcdir/$_pkgname"
+  install -Dm755 haztify "$pkgdir/usr/bin/haztify"
+  install -Dm644 haztify.desktop "$pkgdir/usr/share/applications/haztify.desktop"
+  install -Dm644 config.example.toml GUIDE.md README.md -t "$pkgdir/usr/share/doc/$_pkgname/"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$_pkgname/LICENSE"
+}

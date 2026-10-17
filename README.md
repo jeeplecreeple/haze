@@ -28,7 +28,7 @@ Get the latest build from [Releases](https://github.com/jeeplecreeple/haztify/re
 | --- | --- |
 | Debian, Ubuntu and derivatives | `haztify-linux-x86_64.deb` / `haztify-linux-arm64.deb` |
 | Any other Linux | `haztify-linux-x86_64.tar.gz` / `haztify-linux-arm64.tar.gz` |
-| Arch Linux | [`packaging/arch/PKGBUILD`](packaging/arch/PKGBUILD) (`makepkg -si`) |
+| Arch Linux | `makepkg -si`, see the [Arch steps in the guide](GUIDE.md#arch-linux) |
 | macOS, Apple Silicon (untested) | `haztify-macos-arm64.zip` |
 | macOS, Intel (untested) | `haztify-macos-x86_64.zip` |
 | Windows 10/11 (untested) | `haztify-windows-x86_64.zip` |

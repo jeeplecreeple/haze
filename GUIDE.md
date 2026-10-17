@@ -26,11 +26,41 @@ Download the file for your system from the
 | Distro | File | How |
 | --- | --- | --- |
 | Debian, Ubuntu, Mint, Pop!_OS | `haztify-linux-x86_64.deb` (or `-arm64`) | `sudo apt install ./haztify-linux-x86_64.deb` |
-| Arch, Manjaro, EndeavourOS | `packaging/arch/PKGBUILD` | `makepkg -si` in a folder with the PKGBUILD |
+| Arch, Manjaro, EndeavourOS, CachyOS | see [Arch Linux](#arch-linux) below | `makepkg -si` |
 | Fedora, openSUSE, anything else | `haztify-linux-x86_64.tar.gz` | Extract it and run `./haztify/haztify` |
 
 Linux needs ALSA (`alsa-lib` / `libasound2`), which almost every desktop already has. PipeWire and
 PulseAudio both work through it.
+
+### Arch Linux
+
+There are two ways in. Both give you a normal pacman package, so `pacman -R haztify` removes it.
+
+**Build from source** (works today, takes a few minutes the first time):
+
+```sh
+sudo pacman -S --needed base-devel git rust
+git clone https://github.com/jeeplecreeple/haztify
+cd haztify/packaging/arch
+makepkg -si
+```
+
+`makepkg -si` compiles Haztify, runs its tests, installs any missing dependencies, and installs the
+package. Haztify then shows up in your app launcher. If you use `rustup` instead of the `rust`
+package, skip `rust` in the first line.
+
+To update later:
+
+```sh
+cd haztify && git pull
+cd packaging/arch && makepkg -si
+```
+
+**Prebuilt binary** (no compiling): `packaging/arch/haztify-bin/PKGBUILD` downloads the release build
+instead. Copy it into an empty folder and run `makepkg -si` there. This needs the GitHub repo to be
+public, because it downloads from the Releases page.
+
+For spoken DJ intros with the system voice, also run `sudo pacman -S espeak-ng`.
 
 ### macOS (untested)
 

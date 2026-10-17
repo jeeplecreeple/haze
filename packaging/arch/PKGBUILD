@@ -1,3 +1,7 @@
+# Builds Haztify from the checkout this file sits in, so it also works while the repo is private:
+#   git clone https://github.com/jeeplecreeple/haztify
+#   cd haztify/packaging/arch
+#   makepkg -si
 # Maintainer: Haz
 pkgname=haztify
 pkgver=0.1.0
@@ -6,21 +10,44 @@ pkgdesc="Native, lightweight, customisable Spotify client with an AI DJ"
 arch=('x86_64' 'aarch64')
 url="https://github.com/jeeplecreeple/haztify"
 license=('MIT')
-depends=('alsa-lib' 'libxkbcommon' 'gcc-libs')
+depends=('alsa-lib' 'libxkbcommon' 'libxkbcommon-x11' 'gcc-libs' 'glibc')
 optdepends=('espeak-ng: spoken DJ intros with the system voice'
-            'vulkan-icd-loader: GPU renderer')
-makedepends=('cargo' 'git')
-source=("$pkgname::git+$url.git")
-sha256sums=('SKIP')
+            'speech-dispatcher: alternative system voice for spoken DJ intros'
+            'vulkan-icd-loader: GPU renderer (renderer = "gpu")')
+makedepends=('cargo')
+options=('!lto' '!debug')
+source=()
+sha256sums=()
+
+_root() {
+  realpath "$startdir/../.."
+}
+
+prepare() {
+  cd "$(_root)"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
 
 build() {
-  cd "$pkgname"
-  cargo build --release --locked
+  cd "$(_root)"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR="$srcdir/target"
+  cargo build --frozen --release
+}
+
+check() {
+  cd "$(_root)"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR="$srcdir/target"
+  cargo test --frozen --release
 }
 
 package() {
-  cd "$pkgname"
-  install -Dm755 target/release/haztify "$pkgdir/usr/bin/haztify"
+  cd "$(_root)"
+  install -Dm755 "$srcdir/target/release/haztify" "$pkgdir/usr/bin/haztify"
   install -Dm644 packaging/linux/haztify.desktop "$pkgdir/usr/share/applications/haztify.desktop"
+  install -Dm644 config.example.toml "$pkgdir/usr/share/doc/$pkgname/config.example.toml"
+  install -Dm644 GUIDE.md README.md -t "$pkgdir/usr/share/doc/$pkgname/"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
