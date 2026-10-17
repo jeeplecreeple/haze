@@ -166,6 +166,10 @@ impl App {
                 .into(),
             container(picture).padding(12).width(Fill).style(style::tile(style::tint(self.colors, 0.03), self.panel_r())).into(),
             hidden.into(),
+            self.setting(
+                "Icons-only sidebar",
+                toggler(l.sidebar_icons_only).size(20).on_toggle(move |v| self.with_layout(move |l| l.sidebar_icons_only = v)),
+            ),
             self.l_num("Sidebar width", l.sidebar_width, 160.0..=360.0, |l, v| l.sidebar_width = v),
             self.l_num("Queue width", l.side_panel_width, 220.0..=520.0, |l, v| l.side_panel_width = v),
             self.l_num("Space between panels", l.gap, 0.0..=32.0, |l, v| l.gap = v),

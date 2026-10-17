@@ -27,6 +27,9 @@ app_icon = ""             # haze (empty), sunset, ocean, mint, midnight, mono, a
 accent_from_cover = false # tint the accent colour from the playing song's cover art
 ambient_background = true # a blurred glow of the playing song's cover behind the whole window
 corner_radius = 8.0
+panel_opacity = 78.0      # % how solid the panels are over the cover glow (40-100)
+glow_strength = 55.0      # % of the cover's colour the glow keeps (10-100)
+panel_edges = true        # a hairline edge around the panels
 show_album_art = true
 compact = false           # denser track rows
 window_width = 1100.0
@@ -44,6 +47,7 @@ danger = ""
 
 [layout]
 show_sidebar = true
+sidebar_icons_only = false  # only icons and playlist covers, names on hover
 sidebar = "left"          # left | right
 sidebar_width = 220.0
 player_bar = "bottom"     # top | bottom
@@ -104,6 +108,8 @@ font_family = ""          # empty = the built-in Inter Display ExtraBold
 align = "left"            # left | center
 offset_ms = 0             # negative = earlier, positive = later
 lines_before = 2          # past lines kept on screen
+background_strength = 50.0  # % of the cover's colour the blurred background keeps
+other_lines = 100.0       # % brightness of the lines that aren't being sung (30-200)
 
 # Your own playlist covers, by playlist id ("liked" for Liked Songs). Easiest to set from the app.
 [covers]

@@ -1,6 +1,6 @@
 [package]
 name = "haze"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2024"
 description = "A native, lightweight, heavily customisable Spotify client with an AI DJ"
 license = "MIT"
@@ -39,6 +39,10 @@ flate2 = "1"
 tar = "0.4"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
+# Fewer malloc arenas (see main.rs).
+[target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
+libc = "0.2"
+
 # The Dock icon and Haze.app's Finder icon follow the icon you choose.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
@@ -65,3 +69,8 @@ assets = [
     ["assets/icon.png", "usr/share/icons/hicolor/256x256/apps/haze.png", "644"],
     ["assets/icon.png", "usr/share/pixmaps/haze.png", "644"],
 ]
+
+# iced's CPU renderer with one change: it paints only the damaged part of the window. See
+# vendor/iced_tiny_skia/README.md.
+[patch.crates-io]
+iced_tiny_skia = { path = "vendor/iced_tiny_skia" }

@@ -21,7 +21,7 @@ pub enum Outcome {
 /// files, so call it off the UI thread.
 pub fn sync(app_icon: &str, create: bool) -> Result<Outcome> {
     if cfg!(target_os = "linux") {
-        linux(app_icon, create)
+        linux(create)
     } else if cfg!(windows) {
         windows(app_icon, create)
     } else {
@@ -49,11 +49,13 @@ fn desktop_dir() -> Option<PathBuf> {
     Some(home.join("Desktop"))
 }
 
-fn linux(app_icon: &str, create: bool) -> Result<Outcome> {
+fn linux(create: bool) -> Result<Outcome> {
     let Some(dir) = desktop_dir() else { return Ok(Outcome::Nothing) };
     let path = dir.join("haze.desktop");
-    let icon = custom::icon_file(app_icon)?;
-    let icon = icon.display().to_string();
+    // The themed name: `custom::sync_menu_entry` puts the chosen icon in your icon theme as
+    // `haze`, so a launcher saying `Icon=haze` (like the package's) already shows it. One that
+    // points at an image file (written by Haze 0.5.0) is moved back to it.
+    let icon = "haze".to_string();
     // A link to the installed entry can't be edited, so it's swapped for a file of our own.
     let linked = path.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink());
     let outcome = match std::fs::read_to_string(&path) {

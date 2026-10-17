@@ -54,9 +54,13 @@ pub fn run(config: Config) -> iced::Result {
     *PLAYER_RX.lock().expect("player channel") = Some(rx);
 
     custom::migrate_menu_entry();
-    if let Err(e) = custom::sync_menu_entry(&config.appearance.app_icon) {
-        log::warn!("app menu entry: {e:#}");
-    }
+    // Resizing the icon into the icon theme takes a moment, so it doesn't hold up the window.
+    let app_icon = config.appearance.app_icon.clone();
+    std::thread::spawn(move || {
+        if let Err(e) = custom::sync_menu_entry(&app_icon) {
+            log::warn!("app menu entry: {e:#}");
+        }
+    });
     let (fonts, families) = custom::load_fonts(&config.appearance.font_files);
     if !families.is_empty() {
         log::info!("loaded fonts: {}", families.join(", "));
@@ -258,6 +262,10 @@ pub enum Message {
     CopyRedirectUri,
     /// A redraw while something animates.
     Frame,
+    /// HAZE_BENCH: one frame of the scrolling benchmark.
+    BenchFrame(Instant),
+    /// The song list scrolled: how far down it is and how tall it shows.
+    TracksScrolled(f32, f32),
 
     // Browsing
     Open(Page),
@@ -393,6 +401,9 @@ pub enum Edit {
     AlbumArt(bool),
     AccentFromCover(bool),
     AmbientBackground(bool),
+    PanelOpacity(f32),
+    GlowStrength(f32),
+    PanelEdges(bool),
     AppFont(String),
     LyricsFont(String),
     WordHighlight(bool),
@@ -402,6 +413,8 @@ pub enum Edit {
     LyricsSize(f32),
     LyricsOffset(f32),
     LinesBefore(f32),
+    LyricsBackgroundStrength(f32),
+    OtherLines(f32),
     Provider(crate::config::LlmProvider),
     Model(String),
     BaseUrl(String),
@@ -520,6 +533,10 @@ pub struct App {
     hooked_track: Option<String>,
     /// Sample data instead of Spotify (`HAZE_DEMO`); the visualizer makes up its own music.
     demo: bool,
+    /// HAZE_BENCH=settings|tracks scrolls that list for a few seconds and prints frame times.
+    bench: Option<(&'static str, Vec<Instant>)>,
+    /// The song list's scroll position and height, so only the rows on screen are built.
+    track_scroll: (f32, f32),
     /// The shortcut waiting for you to press its new keys.
     pub recording_key: Option<usize>,
 }
@@ -599,6 +616,8 @@ impl App {
             plugin_busy: false,
             hooked_track: None,
             demo: false,
+            bench: None,
+            track_scroll: (0.0, 2000.0),
             recording_key: None,
             config,
         };
@@ -675,6 +694,9 @@ impl App {
             // The visualizer, the turning cover and the wave in the seek bar.
             let fps = self.config.player.fps.clamp(10, 120) as u64;
             subs.push(iced::time::every(Duration::from_millis(1000 / fps)).map(|_| Message::Tick));
+        }
+        if self.bench.is_some() {
+            subs.push(window::frames().map(Message::BenchFrame));
         }
         Subscription::batch(subs)
     }
@@ -798,8 +820,10 @@ impl App {
         }
         self.cover_fx_for = url;
         let base = theme::resolve(&self.config.appearance);
-        self.lyrics_background = bytes.as_ref().and_then(|b| custom::blurred_cover(b, base.background, 0.5));
-        self.ambient = bytes.as_ref().and_then(|b| custom::blurred_cover(b, base.background, 0.55));
+        let keep = |percent: f32| (percent / 100.0).clamp(0.05, 1.0);
+        let (lyrics, glow) = (keep(self.config.lyrics.background_strength), keep(self.config.appearance.glow_strength));
+        self.lyrics_background = bytes.as_ref().and_then(|b| custom::blurred_cover(b, base.background, lyrics));
+        self.ambient = bytes.as_ref().and_then(|b| custom::blurred_cover(b, base.background, glow));
         self.cover_accent = bytes.as_ref().and_then(|b| theme::accent_from_image(b));
         self.update_player_cover();
         self.refresh_theme();
@@ -964,11 +988,21 @@ impl App {
 
     /// After the icon changes: the app menu entry, the Dock, and the desktop shortcut.
     fn sync_menu_entry(&mut self) -> Task<Message> {
-        if let Err(e) = custom::sync_menu_entry(&self.config.appearance.app_icon) {
-            log::warn!("app menu entry: {e:#}");
-        }
         desktop_icon::set_dock_icon(&self.config.appearance.app_icon);
-        sync_desktop_icon(self.config.appearance.app_icon.clone(), false)
+        let icon = self.config.appearance.app_icon.clone();
+        Task::perform(
+            async move {
+                tokio::task::spawn_blocking(move || {
+                    if let Err(e) = custom::sync_menu_entry(&icon) {
+                        log::warn!("app menu entry: {e:#}");
+                    }
+                    desktop_icon::sync(&icon, false).map_err(|e| format!("{e:#}"))
+                })
+                .await
+                .unwrap_or_else(|e| Err(e.to_string()))
+            },
+            |r| Message::DesktopIconSynced(false, r),
+        )
     }
 
     fn save_quietly(&mut self) {
@@ -1341,13 +1375,34 @@ impl App {
                 return iced::clipboard::write(self.config.spotify.redirect_uri.clone());
             }
             Message::Frame => {}
+            Message::BenchFrame(at) => {
+                let Some((target, frames)) = &mut self.bench else { return Task::none() };
+                frames.push(at);
+                let n = frames.len();
+                if n < 250 {
+                    let dy = if (n / 60) % 2 == 0 { 30.0 } else { -30.0 };
+                    // Scrolling by itself doesn't ask for a redraw, so a message follows it.
+                    return iced::widget::operation::scroll_by(*target, iced::widget::scrollable::AbsoluteOffset { x: 0.0, y: dy })
+                        .chain(Task::done(Message::Frame));
+                }
+                let mut gaps: Vec<f64> = frames.windows(2).skip(20).map(|w| (w[1] - w[0]).as_secs_f64() * 1000.0).collect();
+                gaps.sort_by(f64::total_cmp);
+                let avg = gaps.iter().sum::<f64>() / gaps.len() as f64;
+                eprintln!("bench {target}: {avg:.1} ms a frame on average, p95 {:.1} ms", gaps[gaps.len() * 95 / 100]);
+                return iced::exit();
+            }
 
             Message::Open(page) => return self.load_page(page),
+            Message::TracksScrolled(offset, height) => self.track_scroll = (offset, height),
             Message::Tracks(page, result) => {
                 if page == self.page {
                     self.loading = false;
                     match result {
-                        Ok(tracks) => self.tracks = tracks,
+                        Ok(tracks) => {
+                            self.tracks = tracks;
+                            self.track_scroll.0 = 0.0;
+                            return iced::widget::operation::snap_to("tracks", iced::widget::scrollable::RelativeOffset::START);
+                        }
                         Err(e) => self.notify(e, true),
                     }
                 }
@@ -2066,7 +2121,7 @@ impl App {
 
     fn apply_edit(&mut self, edit: Edit) {
         use Edit::*;
-        let recolour_cover = matches!(edit, Theme(_) | AccentFromCover(_));
+        let recolour_cover = matches!(edit, Theme(_) | AccentFromCover(_) | GlowStrength(_) | LyricsBackgroundStrength(_));
         let a = &mut self.config.appearance;
         let dj = &mut self.config.dj;
         let ly = &mut self.config.lyrics;
@@ -2084,6 +2139,9 @@ impl App {
             AlbumArt(v) => a.show_album_art = v,
             AccentFromCover(v) => a.accent_from_cover = v,
             AmbientBackground(v) => a.ambient_background = v,
+            PanelOpacity(v) => a.panel_opacity = v,
+            GlowStrength(v) => a.glow_strength = v,
+            PanelEdges(v) => a.panel_edges = v,
             AppFont(s) => a.font_family = font_name(s),
             LyricsFont(s) => ly.font_family = font_name(s),
             WordHighlight(v) => ly.word_highlight = v,
@@ -2097,6 +2155,8 @@ impl App {
             LyricsSize(v) => ly.font_size = v,
             LyricsOffset(v) => ly.offset_ms = v as i32,
             LinesBefore(v) => ly.lines_before = v as usize,
+            LyricsBackgroundStrength(v) => ly.background_strength = v,
+            OtherLines(v) => ly.other_lines = v,
             Provider(p) if p != dj.provider => {
                 // A model or URL typed for the old provider would only make the new one fail.
                 dj.provider = p;
@@ -2186,6 +2246,14 @@ impl App {
         self.queue.play_list(&tracks, 0);
         for (i, e) in tracks.iter().enumerate().skip(1).take(2) {
             self.queue.push(Entry { track: e.clone(), origin: Origin::Dj { intro: Some(format!("intro {i}")) } });
+        }
+        if let Ok(target) = std::env::var("HAZE_BENCH") {
+            if target == "tracks" {
+                // A long playlist with covers, like a big Liked Songs.
+                let base = self.tracks.clone();
+                self.tracks = (0..800).map(|i| Track { image_url: Some("demo:cover".into()), ..base[i % base.len()].clone() }).collect();
+            }
+            self.bench = Some((if target == "tracks" { "tracks" } else { "settings" }, Vec::new()));
         }
         self.page = match std::env::var("HAZE_DEMO").as_deref() {
             Ok("settings") => Page::Settings,

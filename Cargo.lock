@@ -1813,7 +1813,7 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "haze"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "directories",
@@ -1821,6 +1821,7 @@ dependencies = [
  "flate2",
  "iced",
  "image",
+ "libc",
  "librespot-core",
  "librespot-oauth",
  "librespot-playback",
@@ -2197,8 +2198,6 @@ dependencies = [
 [[package]]
 name = "iced_tiny_skia"
 version = "0.14.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c267596d742714b1853cc10c3983a367762816fc4836bd3b79f76ce76787d6f8"
 dependencies = [
  "bytemuck",
  "cosmic-text",

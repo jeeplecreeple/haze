@@ -215,6 +215,12 @@ pub struct Appearance {
     /// A blurred glow of the current song's cover behind the whole window.
     pub ambient_background: bool,
     pub corner_radius: f32,
+    /// How solid the panels are over the cover glow, 40-100 percent.
+    pub panel_opacity: f32,
+    /// How much of the cover's colour the glow behind the window keeps, 10-100 percent.
+    pub glow_strength: f32,
+    /// A hairline edge around the panels.
+    pub panel_edges: bool,
     pub show_album_art: bool,
     /// Compact rows fit more tracks on screen.
     pub compact: bool,
@@ -236,6 +242,9 @@ impl Default for Appearance {
             accent_from_cover: false,
             ambient_background: true,
             corner_radius: 8.0,
+            panel_opacity: 78.0,
+            glow_strength: 55.0,
+            panel_edges: true,
             show_album_art: true,
             compact: false,
             window_width: 1100.0,
@@ -322,6 +331,10 @@ pub struct LyricsConfig {
     pub offset_ms: i32,
     /// Lines shown before the current one.
     pub lines_before: usize,
+    /// How much of the cover's colour the blurred lyrics background keeps, 10-100 percent.
+    pub background_strength: f32,
+    /// How bright the lines that aren't being sung are, 30-200 percent.
+    pub other_lines: f32,
 }
 
 impl Default for LyricsConfig {
@@ -335,6 +348,8 @@ impl Default for LyricsConfig {
             align: LyricsAlign::Left,
             offset_ms: 0,
             lines_before: 2,
+            background_strength: 50.0,
+            other_lines: 100.0,
         }
     }
 }
@@ -391,6 +406,8 @@ impl std::fmt::Display for Edge {
 #[serde(default)]
 pub struct Layout {
     pub show_sidebar: bool,
+    /// Only icons and playlist covers in the sidebar, no names.
+    pub sidebar_icons_only: bool,
     pub sidebar: Side,
     pub sidebar_width: f32,
     pub player_bar: Edge,
@@ -410,6 +427,7 @@ impl Default for Layout {
     fn default() -> Self {
         Self {
             show_sidebar: true,
+            sidebar_icons_only: false,
             sidebar: Side::Left,
             sidebar_width: 220.0,
             player_bar: Edge::Bottom,

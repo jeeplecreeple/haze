@@ -284,8 +284,9 @@ without the highlight.
 The timing allows for the half second of sound your speakers are still to play, so lines light up
 as you hear them. If a song still runs early or late, use **Timing offset**.
 
-**Settings → Lyrics** also has: word-by-word highlight, the blurred cover background, left or
-centred lines, the lyrics font and size, and how many past lines stay on screen.
+**Settings → Lyrics** also has: word-by-word highlight, the blurred cover background and how much
+of the cover's colour it keeps, left or centred lines, the lyrics font and size, how many past
+lines stay on screen, and how bright the lines that aren't being sung are.
 
 ## 8. Make it yours
 
@@ -352,14 +353,17 @@ accent = "#0a84ff"
 Turn on **Accent from cover art** in **Settings → Appearance** to have the accent colour follow
 whatever is playing. **Cover glow background** (on by default) puts a blurred, darkened copy of
 the current song's cover behind the whole window, so its colours show around and through the
-panels.
+panels. **Cover glow strength** sets how much of the cover's colour comes through, **Panel
+opacity over the glow** how solid the panels are on top of it, and **Edges around panels** turns
+their thin outline on or off.
 
 ### Layouts
 
 **Settings → Layout** starts with a picture of the window. Its buttons move the sidebar and the
 queue to the other side or hide them, and move the player bar to the top or bottom. The sliders
 change the sidebar and queue widths, the space between panels and the space around the page, and
-the song list columns can be switched on or off and moved up or down.
+the song list columns can be switched on or off and moved up or down. **Icons-only sidebar** shrinks
+the sidebar to its icons and playlist covers; hover over one to see its name.
 
 Under **Layouts**, the built-in layouts (Classic, Minimal, Queue on the left, Player bar on top,
 Wide queue) and the ones you save switch everything in one click. **Save layout** keeps the current
@@ -384,9 +388,12 @@ drag an image onto the Haze window while Settings is open. **Reset** brings back
 
 The icon changes straight away in the window, the taskbar and the logo in the sidebar, and also:
 
-- **Linux:** in your app menu and dock (Haze writes `~/.local/share/applications/haze.desktop`),
-  and on the Haze launcher on your desktop. **Put Haze on the desktop** makes that launcher if you
-  don't have one.
+- **Linux:** everywhere that shows Haze's icon: the app menu, docks, the taskbar, launchers you've
+  pinned and the Haze launcher on your desktop. Haze puts your icon in your icon theme
+  (`~/.local/share/icons/hicolor`) under Haze's own name in every size, so they all pick it up,
+  and asks KDE and GNOME to refresh. **Put Haze on the desktop** makes a desktop launcher if you
+  don't have one. A dock that was already open may only show the new icon after you log out and
+  back in.
 - **Windows:** on the Haze shortcut on your desktop. **Put Haze on the desktop** makes one.
 - **macOS:** in the Dock while Haze runs, and on Haze.app in Finder (and so in the Dock when Haze
   is closed).
@@ -479,7 +486,7 @@ Media keys always work. On macOS, `Ctrl` in a shortcut also means `Cmd`.
 | Login says the address is in use | Something else is using port 8898. Close it, or change `redirect_uri` in the config file and on your Spotify app to another port. |
 | "Premium is required" or nothing plays | Playback needs Spotify Premium on the account you logged in with. |
 | Every song says it isn't available | Haze needs its second, playback login. Log out under **Settings**, log in again, and approve both browser pages. The message also shows what Spotify said, which helps in an issue. |
-| The taskbar shows a generic icon (Linux) | Docks find the icon through Haze's menu entry. Packages install one; when you run Haze from the .tar.gz it writes its own to `~/.local/share/applications` the first time it starts. Log out and back in if your desktop still shows the old one. |
+| The taskbar or dock shows the old or a generic icon (Linux) | Haze puts the icon you chose in `~/.local/share/icons/hicolor` when it starts and whenever you change it, and when you run it from the .tar.gz it also adds itself to `~/.local/share/applications`. Docks that were already open keep the icon they loaded, so log out and back in. |
 | Spotify returns 403 for your account | Your Spotify app is in development mode, which only allows accounts listed under **User Management** on the dashboard. Add your account's email there. |
 | "No API key for the DJ" | Add the key in Settings, or set the environment variable from [the table above](#add-an-api-key) and restart. |
 | The DJ says its picks couldn't be found | The model named songs Spotify doesn't have. Try again, or use a larger model. |

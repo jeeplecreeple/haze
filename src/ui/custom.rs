@@ -155,44 +155,116 @@ fn installed_entry_exists() -> bool {
     dirs.split(':').filter(|d| !d.is_empty()).any(|d| Path::new(d).join("applications/haze.desktop").exists())
 }
 
-/// On Linux, docks and launchers (and on Wayland, the taskbar) take the icon from the desktop
-/// entry named after the app, not from the window. So this keeps a per-user entry in step:
-/// one pointing at the chosen icon when it isn't the default, and when Haze runs without an
-/// installed entry (from the .tar.gz or a build folder) one that uses the default icon.
+/// The sizes written into your icon theme, so every dock, menu and taskbar finds one that fits.
+const THEME_ICON_SIZES: [u32; 10] = [16, 22, 24, 32, 48, 64, 96, 128, 256, 512];
+
+/// Remembers which icon is in your icon theme, so it's only rewritten when it changes.
+const THEME_ICON_STAMP: &str = "haze-icon.stamp";
+
+fn theme_icon_dir() -> Option<PathBuf> {
+    Some(data_home()?.join("icons/hicolor"))
+}
+
+/// On Linux, docks, menus, notifications and (on Wayland) the taskbar look the icon up by the
+/// desktop entry's `Icon=haze`, in your icon theme. So the chosen icon is written as `haze` in
+/// every size into `~/.local/share/icons/hicolor`, which comes before the system's icons. That
+/// covers the package's own entry too, and launchers you've pinned. When Haze runs without an
+/// installed entry (from the .tar.gz or a build folder) it also writes one to the app menu.
 pub fn sync_menu_entry(app_icon: &str) -> Result<()> {
     if !cfg!(target_os = "linux") {
         return Ok(());
     }
     let Some(path) = menu_entry_path() else { return Ok(()) };
-    let name = app_icon.trim();
-    let icon = if is_default_icon(name) {
-        if installed_entry_exists() {
-            // The package's entry already has the right icon; drop any custom one of ours.
-            if std::fs::read_to_string(&path).is_ok_and(|s| s.contains(MENU_ENTRY_MARK)) {
-                std::fs::remove_file(&path)?;
+    let theme = theme_icon_dir().context("no home folder")?;
+    let installed = installed_entry_exists();
+    let default = is_default_icon(app_icon);
+    let stamp_file = theme.join(THEME_ICON_STAMP);
+    let source = if default { String::new() } else { app_icon.trim().to_string() };
+    // The file's modification time too, so editing your image in place counts as a change.
+    let modified = std::fs::metadata(&source).and_then(|m| m.modified()).ok().map(|t| format!("{t:?}")).unwrap_or_default();
+    let stamp = format!("{source}\n{modified}\n{installed}\n");
+    let mut changed = false;
+    if std::fs::read_to_string(&stamp_file).ok().as_deref() != Some(stamp.as_str()) {
+        if default && installed {
+            // The package's icons are right; take ours away.
+            for size in THEME_ICON_SIZES {
+                let _ = std::fs::remove_file(theme.join(format!("{size}x{size}/apps/haze.png")));
             }
-            return Ok(());
+            let _ = std::fs::remove_file(&stamp_file);
+        } else {
+            write_theme_icons(&theme, &icon_bytes(app_icon))?;
+            std::fs::write(&stamp_file, &stamp)?;
         }
-        let file = data_home().context("no home folder")?.join("icons/hicolor/256x256/apps/haze.png");
-        if std::fs::read(&file).ok().as_deref() != Some(BUILTIN_ICON) {
-            std::fs::create_dir_all(file.parent().expect("has parent"))?;
-            std::fs::write(&file, BUILTIN_ICON)?;
-        }
-        "haze".to_string()
-    } else {
-        icon_file(name)?.display().to_string()
-    };
+        changed = true;
+    }
+
+    // The menu entry. Older versions wrote one pointing at the image file; it isn't needed when
+    // a package installed Haze, and otherwise it now uses the themed icon.
     let current = std::fs::read_to_string(&path);
     if current.as_ref().is_ok_and(|s| !s.contains(MENU_ENTRY_MARK)) {
         // You wrote your own entry; leave it alone.
-        return Ok(());
+    } else if installed {
+        if current.is_ok() {
+            std::fs::remove_file(&path)?;
+            changed = true;
+        }
+    } else {
+        let entry = format!("{MENU_ENTRY_MARK}\n{}", desktop_entry(&std::env::current_exe()?, "haze"));
+        if current.ok().as_deref() != Some(entry.as_str()) {
+            std::fs::create_dir_all(path.parent().expect("has parent"))?;
+            std::fs::write(&path, entry)?;
+            changed = true;
+        }
     }
-    let entry = format!("{MENU_ENTRY_MARK}\n{}", desktop_entry(&std::env::current_exe()?, &icon));
-    if current.ok().as_deref() != Some(entry.as_str()) {
-        std::fs::create_dir_all(path.parent().expect("has parent"))?;
-        std::fs::write(&path, entry)?;
+    if changed {
+        refresh_desktop_caches(&theme, path.parent().expect("has parent"));
     }
     Ok(())
+}
+
+/// `bytes` as `haze.png` in every size of the icon theme, square and centred.
+fn write_theme_icons(theme: &Path, bytes: &[u8]) -> Result<()> {
+    let img = ::image::load_from_memory(bytes).or_else(|_| ::image::load_from_memory(BUILTIN_ICON))?.to_rgba8();
+    // Pad to a square so a wide image isn't stretched.
+    let side = img.width().max(img.height());
+    let mut square = ::image::RgbaImage::new(side, side);
+    ::image::imageops::overlay(&mut square, &img, ((side - img.width()) / 2) as i64, ((side - img.height()) / 2) as i64);
+    for size in THEME_ICON_SIZES {
+        let file = theme.join(format!("{size}x{size}/apps/haze.png"));
+        std::fs::create_dir_all(file.parent().expect("has parent"))?;
+        let scaled = ::image::imageops::resize(&square, size, size, ::image::imageops::FilterType::Lanczos3);
+        scaled.save_with_format(&file, ::image::ImageFormat::Png).with_context(|| format!("writing {}", file.display()))?;
+    }
+    Ok(())
+}
+
+/// Tells the desktop the icons and menu entries changed. Each of these is optional: they are
+/// run only when installed, and in the background.
+fn refresh_desktop_caches(theme: &Path, applications: &Path) {
+    let run = |program: &str, args: &[&std::ffi::OsStr]| {
+        if on_path(program) {
+            let _ = std::process::Command::new(program)
+                .args(args)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+        }
+    };
+    // GTK reads a cache file when there is one; an out-of-date one hides the new icon.
+    if theme.join("icon-theme.cache").exists() {
+        run("gtk-update-icon-cache", &["-q".as_ref(), "-t".as_ref(), "-f".as_ref(), theme.as_os_str()]);
+    }
+    run("update-desktop-database", &["-q".as_ref(), applications.as_os_str()]);
+    // KDE keeps its own cache of menu entries and icons.
+    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_ascii_lowercase();
+    if desktop.contains("kde") {
+        for program in ["kbuildsycoca6", "kbuildsycoca5"] {
+            if on_path(program) {
+                run(program, &[]);
+                break;
+            }
+        }
+    }
 }
 
 /// A Linux launcher for Haze with the given icon.
@@ -209,19 +281,6 @@ pub fn desktop_entry(exe: &Path, icon: &str) -> String {
 pub fn is_default_icon(app_icon: &str) -> bool {
     let name = app_icon.trim();
     name.is_empty() || name.eq_ignore_ascii_case("haze")
-}
-
-/// `app_icon` as an image file other programs can read: built-in icons are written out to the
-/// config folder once.
-pub fn icon_file(app_icon: &str) -> Result<PathBuf> {
-    let name = app_icon.trim();
-    let name = if name.is_empty() { "haze" } else { name };
-    let Some(bytes) = builtin_icon(name) else { return Ok(PathBuf::from(name)) };
-    let file = config::data_dir("icons")?.join(format!("builtin-{}.png", name.to_ascii_lowercase()));
-    if std::fs::read(&file).ok().as_deref() != Some(bytes) {
-        std::fs::write(&file, bytes)?;
-    }
-    Ok(file)
 }
 
 /// A custom-icon menu entry written under the app's old name points at the old program, so it is

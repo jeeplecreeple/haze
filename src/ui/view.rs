@@ -1,7 +1,7 @@
 //! All drawing. Layout follows `[layout]` in the config: sidebar side, player bar edge, side panel.
 
 use iced::widget::{
-    Column, Row, Space, button, column, container, image, pick_list, responsive, rich_text, row, scrollable, slider,
+    Column, Row, Space, button, column, container, image, pick_list, responsive, rich_text, row, scrollable, slider, tooltip,
     span, stack, text, text_input, toggler,
 };
 use iced::{Alignment, ContentFit, Element, Fill, Font, Length, Padding, Shrink, font};
@@ -81,7 +81,23 @@ impl App {
 
     /// The main panels: see-through over the cover glow, solid otherwise.
     fn glass(&self) -> impl Fn(&iced::Theme) -> container::Style + use<> {
-        style::glass(self.colors, self.panel_r(), if self.backdrop().is_some() { 0.78 } else { 1.0 })
+        self.glass_at(self.panel_opacity())
+    }
+
+    fn panel_opacity(&self) -> f32 {
+        if self.backdrop().is_some() { (self.config.appearance.panel_opacity / 100.0).clamp(0.0, 1.0) } else { 1.0 }
+    }
+
+    fn glass_at(&self, opacity: f32) -> impl Fn(&iced::Theme) -> container::Style + use<> {
+        let base = style::glass(self.colors, self.panel_r(), opacity);
+        let edges = self.config.appearance.panel_edges;
+        move |theme| {
+            let mut s = base(theme);
+            if !edges {
+                s.border.width = 0.0;
+            }
+            s
+        }
     }
 
     fn font(&self) -> Font {
@@ -316,9 +332,9 @@ impl App {
             .clip(true)
             .style(if on_lyrics && self.lyrics_backdrop() {
                 // The lyrics float straight on the blurred cover that fills the window.
-                style::glass(self.colors, self.panel_r(), 0.0)
+                self.glass_at(0.0)
             } else {
-                style::glass(self.colors, self.panel_r(), if self.backdrop().is_some() { 0.78 } else { 1.0 })
+                self.glass_at(self.panel_opacity())
             });
         let bar = container(self.player_bar()).padding(self.gap());
         if on_lyrics && self.fullscreen {
@@ -349,16 +365,31 @@ impl App {
         let selected = self.page == page;
         let glyph = icon(glyph, self.fs(1.15));
         let glyph = if selected { glyph.color(self.colors.accent) } else { glyph };
-        button(
+        let content: El = if self.config.layout.sidebar_icons_only {
+            container(glyph).center_x(Fill).into()
+        } else {
             row![glyph, text(label).size(self.fs(1.0)).font(self.weight(font::Weight::Semibold))]
                 .spacing(12)
-                .align_y(Alignment::Center),
-        )
-        .width(Fill)
-        .padding([8, 12])
-        .style(style::nav(self.colors, self.r(), selected))
-        .on_press(Message::Open(page))
-        .into()
+                .align_y(Alignment::Center)
+                .into()
+        };
+        let entry = button(content)
+            .width(Fill)
+            .padding([8, 12])
+            .style(style::nav(self.colors, self.r(), selected))
+            .on_press(Message::Open(page));
+        self.tip(entry, label)
+    }
+
+    /// The name of an icon-only sidebar entry, shown on hover.
+    fn tip<'a>(&self, content: impl Into<El<'a>>, label: impl Into<String>) -> El<'a> {
+        if !self.config.layout.sidebar_icons_only {
+            return content.into();
+        }
+        let label = container(text(label.into()).size(self.fs(0.85)))
+            .padding([4, 8])
+            .style(style::glass(self.colors, self.r(), 1.0));
+        tooltip(content, label, tooltip::Position::Right).gap(6).into()
     }
 
     /// A playlist's picture for small places: your cover, Spotify's if it's loaded, else its initial.
@@ -378,6 +409,14 @@ impl App {
         let page = Page::Playlist(p.clone());
         let selected = self.page == page;
         let subtitle = if p.owner.is_empty() { "Playlist".to_string() } else { format!("Playlist · {}", p.owner) };
+        if self.config.layout.sidebar_icons_only {
+            let entry = button(container(self.playlist_thumb(&p.id, &p.name, p.image_url.as_deref(), 38.0)).center_x(Fill))
+                .width(Fill)
+                .padding([5, 4])
+                .style(style::nav(self.colors, self.r(), selected))
+                .on_press(Message::Open(page));
+            return self.tip(entry, p.name.clone());
+        }
         button(
             row![
                 self.playlist_thumb(&p.id, &p.name, p.image_url.as_deref(), 38.0),
@@ -399,12 +438,11 @@ impl App {
     }
 
     fn sidebar(&self) -> El<'_> {
-        let brand = row![
-            image(self.icon.clone()).width(30).height(30),
-            self.heading("Haze", 1.35).color(self.colors.text),
-        ]
-        .spacing(10)
-        .align_y(Alignment::Center);
+        let icons_only = self.config.layout.sidebar_icons_only;
+        let mut brand = row![image(self.icon.clone()).width(30).height(30)].spacing(10).align_y(Alignment::Center);
+        if !icons_only {
+            brand = brand.push(self.heading("Haze", 1.35).color(self.colors.text));
+        }
 
         let nav = column![
             self.nav(icon::SPARKLES, "DJ", Page::Dj),
@@ -422,28 +460,37 @@ impl App {
 
         let name = if self.user_name.is_empty() { "…".to_string() } else { self.user_name.clone() };
         let initial: String = name.chars().next().map(|c| c.to_uppercase().collect()).unwrap_or_default();
-        let footer = row![
-            container(text(initial).size(self.fs(0.9)).font(self.weight(font::Weight::Bold)))
-                .center(30)
-                .style(style::tile(self.colors.accent, 999.0)),
-            text(name).size(self.fs(0.95)).width(Fill).wrapping(text::Wrapping::None),
-            self.icon_button(icon::SETTINGS, self.fs(1.15), Some(Message::Open(Page::Settings)), self.page == Page::Settings),
-        ]
-        .spacing(10)
-        .align_y(Alignment::Center);
+        let avatar = container(text(initial).size(self.fs(0.9)).font(self.weight(font::Weight::Bold)))
+            .center(30)
+            .style(style::tile(self.colors.accent, 999.0));
+        let settings = self.icon_button(icon::SETTINGS, self.fs(1.15), Some(Message::Open(Page::Settings)), self.page == Page::Settings);
+        let footer: El = if icons_only {
+            column![self.tip(settings, "Settings"), self.tip(avatar, name)].spacing(8).align_x(Alignment::Center).width(Fill).into()
+        } else {
+            row![avatar, text(name).size(self.fs(0.95)).width(Fill).wrapping(text::Wrapping::None), settings]
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .into()
+        };
+        let library: El = if icons_only {
+            container(icon(icon::LIBRARY, self.fs(1.0)).color(self.colors.muted_text)).center_x(Fill).padding(Padding::ZERO.top(10)).into()
+        } else {
+            container(row![icon(icon::LIBRARY, self.fs(1.0)).color(self.colors.muted_text), self.label("YOUR PLAYLISTS")].spacing(8))
+                .padding(Padding::from([0, 12]).top(10))
+                .into()
+        };
 
         container(
             column![
-                container(brand).padding([4, 8]),
+                container(brand).padding([4, 8]).center_x(if icons_only { Fill } else { Shrink }),
                 nav,
-                container(row![icon(icon::LIBRARY, self.fs(1.0)).color(self.colors.muted_text), self.label("YOUR PLAYLISTS")].spacing(8))
-                    .padding(Padding::from([0, 12]).top(10)),
+                library,
                 self.scroll(playlists).height(Fill),
                 footer,
             ]
             .spacing(8),
         )
-        .width(self.config.layout.sidebar_width)
+        .width(if icons_only { 72.0 } else { self.config.layout.sidebar_width })
         .height(Fill)
         .padding(10)
         .style(self.glass())
@@ -561,8 +608,18 @@ impl App {
         }
         header = header.push(Space::new().width(72));
 
-        let mut list = Column::new().spacing(0);
-        for (i, track) in self.tracks.iter().enumerate() {
+        // Every row is the same height, so only the rows on screen (and a few either side) are
+        // built; the rest are empty space. A long Liked Songs then scrolls as fast as a short one.
+        let fs = self.fs(1.0);
+        let text_h = if stacked { fs * 1.3 + 2.0 + fs * 0.85 * 1.3 } else { fs * 1.3 };
+        let content_h = text_h.max(fs + 14.0).ceil();
+        let row_h = content_h + pad as f32 * 2.0;
+        let (offset, height) = self.track_scroll;
+        let first = ((offset / row_h) as usize).saturating_sub(10).min(self.tracks.len());
+        let last = (((offset + height) / row_h).ceil() as usize + 10).min(self.tracks.len());
+
+        let mut list = Column::new().spacing(0).push(Space::new().height(first as f32 * row_h));
+        for (i, track) in self.tracks.iter().enumerate().skip(first).take(last - first) {
             let playing = playing_uri == Some(track.uri.as_str());
             let index: El = if playing {
                 icon(if self.playing { icon::AUDIO_LINES } else { icon::MUSIC }, self.fs(1.0)).color(self.colors.accent).into()
@@ -579,17 +636,22 @@ impl App {
             ]
             .spacing(2)
             .align_y(Alignment::Center);
-            let line = button(row![cells, actions].spacing(14).align_y(Alignment::Center))
+            let line = button(container(row![cells, actions].spacing(14).align_y(Alignment::Center)).height(content_h).center_y(content_h))
                 .width(Fill)
+                .height(row_h)
                 .padding([pad, 12])
                 .style(style::row(self.colors, self.r(), playing))
                 .on_press(Message::PlayFrom(i));
             list = list.push(line);
         }
+        list = list.push(Space::new().height((self.tracks.len() - last) as f32 * row_h));
         column![
             header,
             container(Space::new().height(1)).width(Fill).style(style::tile(style::tint(self.colors, 0.1), 0.0)),
-            self.scroll(list).height(Fill)
+            self.scroll(list)
+                .id("tracks")
+                .on_scroll(|v| Message::TracksScrolled(v.absolute_offset().y, v.bounds().height))
+                .height(Fill)
         ]
         .spacing(6)
         .into()
@@ -818,7 +880,8 @@ impl App {
             } else {
                 let past = active.is_some_and(|a| i <= a);
                 let alpha = if past { 0.3 - 0.05 * distance } else { 0.5 - 0.07 * distance };
-                text(line.text()).size(size).font(font).color(faded(alpha.max(0.1))).align_x(align).width(Fill).into()
+                let alpha = (alpha.max(0.1) * ly.other_lines / 100.0).clamp(0.03, 1.0);
+                text(line.text()).size(size).font(font).color(faded(alpha)).align_x(align).width(Fill).into()
             };
             let on_card = card && Some(i) == active && !in_gap;
             col = col.push(
@@ -1316,6 +1379,9 @@ impl App {
             self.field("Accent colour", "#ff5c8a", &a.colors.accent, Edit::Accent),
             self.toggle("Accent from cover art", a.accent_from_cover, Edit::AccentFromCover),
             self.toggle("Cover glow background", a.ambient_background, Edit::AmbientBackground),
+            self.number("Cover glow strength %", a.glow_strength, 10.0..=100.0, Edit::GlowStrength),
+            self.number("Panel opacity over the glow %", a.panel_opacity, 40.0..=100.0, Edit::PanelOpacity),
+            self.toggle("Edges around panels", a.panel_edges, Edit::PanelEdges),
             self.setting("App icon", icon_controls),
             self.setting(
                 "App font",
@@ -1340,10 +1406,12 @@ impl App {
             ),
             self.toggle("Word-by-word highlight", ly.word_highlight, Edit::WordHighlight),
             self.toggle("Blurred cover background", ly.blurred_background, Edit::BlurredBackground),
+            self.number("Background colour strength %", ly.background_strength, 10.0..=100.0, Edit::LyricsBackgroundStrength),
             self.setting("Alignment", self.picker(LyricsAlign::ALL, Some(ly.align), |v| Message::Edit(Edit::LyricsAlign(v)))),
             self.setting("Lyrics font", self.font_picker(&ly.font_family, Edit::LyricsFont)),
             self.number("Lyrics text size", ly.font_size, 16.0..=72.0, Edit::LyricsSize),
             self.number("Past lines shown", ly.lines_before as f32, 0.0..=6.0, Edit::LinesBefore),
+            self.number("Brightness of the other lines %", ly.other_lines, 30.0..=200.0, Edit::OtherLines),
             self.setting(
                 "Timing offset (ms)",
                 row![
@@ -1410,6 +1478,7 @@ impl App {
         .spacing(16)
         .max_width(820);
         self.scroll(container(form).padding(Padding { top: 0.0, right: 16.0, bottom: 8.0, left: 0.0 }))
+            .id("settings")
             .height(Fill)
             .into()
     }
