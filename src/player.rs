@@ -16,7 +16,6 @@ use librespot_playback::player::{Player, PlayerEvent};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::config::{self, Bitrate, PlaybackConfig};
-use crate::spotify::auth::Auth;
 
 /// Player state changes, forwarded to the UI.
 #[derive(Debug, Clone)]
@@ -33,7 +32,6 @@ pub struct Audio {
     session: std::sync::Mutex<Session>,
     player: Arc<Player>,
     mixer: Arc<dyn Mixer>,
-    auth: Auth,
 }
 
 impl std::fmt::Debug for Audio {
@@ -43,8 +41,8 @@ impl std::fmt::Debug for Audio {
 }
 
 impl Audio {
-    pub async fn connect(auth: Auth, settings: PlaybackConfig, events: UnboundedSender<PlayerUpdate>) -> Result<Self> {
-        let session = new_session(&auth, &settings).await?;
+    pub async fn connect(settings: PlaybackConfig, events: UnboundedSender<PlayerUpdate>) -> Result<Self> {
+        let session = new_session(&settings).await?;
 
         let mixer = mixer::find(None).context("no software mixer")?(MixerConfig::default())
             .map_err(|e| anyhow!("audio mixer: {e}"))?;
@@ -76,7 +74,7 @@ impl Audio {
             }
         });
 
-        Ok(Self { session: std::sync::Mutex::new(session), player, mixer, auth })
+        Ok(Self { session: std::sync::Mutex::new(session), player, mixer })
     }
 
     /// Reconnects the audio session if Spotify dropped it (sleep, network change, ...).
@@ -84,7 +82,7 @@ impl Audio {
         let dropped = self.session.lock().expect("session lock").is_invalid();
         if dropped {
             log::info!("Spotify session dropped; reconnecting");
-            let session = new_session(&self.auth, settings).await?;
+            let session = new_session(settings).await?;
             self.player.set_session(session.clone());
             *self.session.lock().expect("session lock") = session;
         }
@@ -133,20 +131,84 @@ impl Audio {
     }
 }
 
-async fn new_session(auth: &Auth, settings: &PlaybackConfig) -> Result<Session> {
-    let cache_dir = config::cache_dir()?;
-    let audio_dir = (settings.audio_cache_mb > 0).then(|| cache_dir.join("audio"));
-    let size_limit = (settings.audio_cache_mb > 0).then_some(settings.audio_cache_mb * 1024 * 1024);
-    let cache = Cache::new(Some(cache_dir.join("session")), None, audio_dir, size_limit)
-        .map_err(|e| anyhow!("audio cache: {e}"))?;
-
-    let session = Session::new(SessionConfig::default(), Some(cache));
-    let token = auth.access_token().await?;
+async fn new_session(settings: &PlaybackConfig) -> Result<Session> {
+    let config = SessionConfig::default();
+    let cache = new_cache(settings)?;
+    if let Some(saved) = cache.credentials() {
+        let session = Session::new(config.clone(), Some(cache));
+        match session.connect(saved, true).await {
+            Ok(()) => return Ok(session),
+            // The saved playback login stopped working (password change, signed out everywhere).
+            Err(e) => log::warn!("saved playback login rejected ({e}); logging in again"),
+        }
+        forget_playback_login();
+    }
+    let credentials = playback_login(&config.client_id).await?;
+    let session = Session::new(config, Some(new_cache(settings)?));
     session
-        .connect(Credentials::with_access_token(token), false)
+        .connect(credentials, true)
         .await
         .map_err(|e| anyhow!("connecting to Spotify for playback (Premium is required): {e}"))?;
     Ok(session)
+}
+
+fn new_cache(settings: &PlaybackConfig) -> Result<Cache> {
+    let cache_dir = config::cache_dir()?;
+    let audio_dir = (settings.audio_cache_mb > 0).then(|| cache_dir.join("audio"));
+    let size_limit = (settings.audio_cache_mb > 0).then_some(settings.audio_cache_mb * 1024 * 1024);
+    Cache::new(Some(cache_dir.join("session")), None, audio_dir, size_limit).map_err(|e| anyhow!("audio cache: {e}"))
+}
+
+/// Spotify only streams audio to its own client IDs, so a token from your developer app (which
+/// the Web API is happy with) connects but every track comes back unavailable. Playback logs in
+/// once more with the ID Spotify's desktop app and librespot use; librespot then saves a
+/// reusable login in the cache, so this browser step only happens the first time.
+async fn playback_login(client_id: &str) -> Result<Credentials> {
+    let client = librespot_oauth::OAuthClientBuilder::new(client_id, PLAYBACK_REDIRECT, vec!["streaming"])
+        .open_in_browser()
+        .with_custom_message(crate::spotify::auth::LOGIN_PAGE)
+        .build()
+        .map_err(|e| anyhow!("playback login setup failed: {e}"))?;
+    let token = client.get_access_token_async().await.map_err(|e| anyhow!("playback login failed: {e}"))?;
+    Ok(Credentials::with_access_token(token.access_token))
+}
+
+/// The redirect address registered for Spotify's own client ID.
+const PLAYBACK_REDIRECT: &str = "http://127.0.0.1:8898/login";
+
+/// Forgets the saved playback login, for logging out.
+pub fn forget_playback_login() {
+    if let Ok(dir) = config::cache_dir() {
+        let _ = std::fs::remove_file(dir.join("session").join("credentials.json"));
+    }
+}
+
+static LAST_PROBLEM: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// Passes everything to the real logger, and remembers librespot's latest warning so the UI can
+/// say why a song wouldn't play.
+pub struct ProblemLogger(pub env_logger::Logger);
+
+impl log::Log for ProblemLogger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        self.0.enabled(metadata)
+    }
+
+    fn log(&self, record: &log::Record) {
+        if record.level() <= log::Level::Warn && record.target().starts_with("librespot") {
+            *LAST_PROBLEM.lock().expect("problem lock") = Some(record.args().to_string());
+        }
+        self.0.log(record);
+    }
+
+    fn flush(&self) {
+        self.0.flush();
+    }
+}
+
+/// librespot's most recent warning or error, cleared by reading it.
+pub fn take_last_problem() -> Option<String> {
+    LAST_PROBLEM.lock().expect("problem lock").take()
 }
 
 fn volume_to_u16(volume: u8) -> u16 {

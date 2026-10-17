@@ -8,10 +8,12 @@ mod queue;
 mod spotify;
 mod theme;
 mod ui;
+mod update;
 
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("haze=info,librespot=warn"))
-        .init();
+    let logger = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("haze=info,librespot=warn")).build();
+    log::set_max_level(logger.filter());
+    let _ = log::set_boxed_logger(Box::new(player::ProblemLogger(logger)));
 
     let config = match config::Config::load_or_create() {
         Ok(c) => c,
@@ -27,6 +29,7 @@ fn main() {
         unsafe { std::env::set_var("ICED_BACKEND", "tiny-skia") };
     }
 
+    update::clean_up();
     if let Err(e) = ui::run(config) {
         eprintln!("Haze: {e}");
         std::process::exit(1);

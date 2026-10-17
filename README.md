@@ -14,10 +14,12 @@ that runs on **your own** LLM API key.
 - **Synced lyrics.** A karaoke-style lyrics view in the spirit of Spicy Lyrics: words light up as
   they're sung, a blurred cover-art background, instrumental-break dots, click a line to jump there,
   full screen. Lyrics come from Spotify, with [LRCLIB](https://lrclib.net) as a fallback.
+- **Updates itself.** Checks GitHub for new versions and, outside a package manager, installs them
+  with one click.
 - **Looks the part.** Rounded panels, Inter type and Lucide icons built in, so it looks the same on
   Linux, Windows and macOS.
 - **Customisable.** Themes (including Apple Music light and dark) or your own theme files, colours,
-  an accent that follows the cover art, your own fonts, your own app icon, your own playlist
+  an accent that follows the cover art, your own fonts, eight built-in app icons or your own, your own playlist
   covers, corner radius, compact rows, which side the sidebar and queue sit on, player bar on top or
   bottom, track columns, keyboard shortcuts.
 - Linux (Arch, Debian, Ubuntu, Fedora, ...), Windows and macOS.

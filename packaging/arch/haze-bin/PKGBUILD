@@ -3,7 +3,7 @@
 # Maintainer: Haz
 pkgname=haze-bin
 _pkgname=haze
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc="Native, lightweight, customisable Spotify client with an AI DJ (prebuilt)"
 arch=('x86_64' 'aarch64')
@@ -27,6 +27,7 @@ package() {
   install -Dm755 haze "$pkgdir/usr/bin/haze"
   install -Dm644 haze.desktop "$pkgdir/usr/share/applications/haze.desktop"
   install -Dm644 haze.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/haze.png"
+  install -Dm644 haze.png "$pkgdir/usr/share/pixmaps/haze.png"
   install -Dm644 config.example.toml GUIDE.md README.md -t "$pkgdir/usr/share/doc/$_pkgname/"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$_pkgname/LICENSE"
 }

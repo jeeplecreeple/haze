@@ -7,7 +7,7 @@ use iced::widget::{
 use iced::{Alignment, ContentFit, Element, Fill, Font, Length, Padding, Shrink, font};
 
 use super::icon::{self, icon};
-use super::{App, DEFAULT_FONT, Edit, Login, Message, Page, SYSTEM_FONT, custom, style};
+use super::{App, DEFAULT_FONT, Edit, Login, Message, Page, SYSTEM_FONT, SettingsTab, UpdateStatus, custom, style};
 use crate::config::{DjMode, Edge, LlmProvider, LyricsAlign, Side, TtsEngine, non_empty};
 use crate::lyrics::{Line, Lyrics};
 use crate::queue::{Origin, Repeat};
@@ -127,7 +127,7 @@ impl App {
         let mut root = Column::new();
         if let Some(notice) = &self.notice {
             root = root.push(
-                container(
+                container(container(
                     row![
                         text(&notice.text).size(self.fs(0.95)).width(Fill),
                         self.icon_button(icon::X, self.fs(1.0), Some(Message::DismissNotice), false)
@@ -136,10 +136,69 @@ impl App {
                 )
                 .padding([4, 12])
                 .width(Fill)
-                .style(style::banner(self.colors, 0.0, notice.error)),
+                .style(style::banner(self.colors, self.panel_r(), notice.error)),
+            )
+            .padding(Padding::new(GAP).bottom(0)),
             );
         }
+        if self.setup.is_none()
+            && let Some(banner) = self.update_banner()
+        {
+            root = root.push(banner);
+        }
         container(root.push(content)).width(Fill).height(Fill).style(style::page(self.colors)).into()
+    }
+
+    /// The strip across the top that offers a new release and shows how installing it goes.
+    fn update_banner(&self) -> Option<El<'_>> {
+        let u = self.update.as_ref()?;
+        let v = &u.release.version;
+        let mut line = Row::new().spacing(10).align_y(Alignment::Center).push(icon(icon::SPARKLES, self.fs(1.0)).color(self.colors.accent));
+        let page = Message::OpenUrl(u.release.page.clone());
+        match &u.status {
+            UpdateStatus::Available if u.release.installable() => {
+                line = line
+                    .push(text(format!("Haze {v} is available.")).size(self.fs(0.95)).width(Fill))
+                    .push(self.small_button(None, "What's new", page))
+                    .push(self.small_button(None, "Later", Message::DismissUpdate))
+                    .push(self.primary_button(None, "Update now", Some(Message::InstallUpdate)));
+            }
+            UpdateStatus::Available => {
+                line = line
+                    .push(
+                        text(format!("Haze {v} is available. Update it the same way you installed it."))
+                            .size(self.fs(0.95))
+                            .width(Fill),
+                    )
+                    .push(self.small_button(None, "Later", Message::DismissUpdate))
+                    .push(self.primary_button(Some(icon::EXTERNAL_LINK), "Download", Some(page)));
+            }
+            UpdateStatus::Installing => {
+                line = line.push(text(format!("Downloading Haze {v}…")).size(self.fs(0.95)).width(Fill));
+            }
+            UpdateStatus::Installed(_) => {
+                line = line
+                    .push(text(format!("Haze {v} is installed. Restart to start using it.")).size(self.fs(0.95)).width(Fill))
+                    .push(self.small_button(None, "Later", Message::DismissUpdate))
+                    .push(self.primary_button(None, "Restart now", Some(Message::RestartForUpdate)));
+            }
+            UpdateStatus::Failed(e) => {
+                line = line
+                    .push(text(format!("Couldn't update: {e}")).size(self.fs(0.95)).width(Fill))
+                    .push(self.small_button(None, "Close", Message::DismissUpdate))
+                    .push(self.primary_button(Some(icon::EXTERNAL_LINK), "Download it yourself", Some(page)));
+            }
+        }
+        Some(
+            container(
+                container(line)
+                    .padding([8, 14])
+                    .width(Fill)
+                    .style(style::banner(self.colors, self.panel_r(), matches!(u.status, UpdateStatus::Failed(_)))),
+            )
+            .padding(Padding::new(GAP).bottom(0))
+            .into(),
+        )
     }
 
     fn login_view(&self) -> El<'_> {
@@ -728,7 +787,7 @@ impl App {
             "Off air".to_string()
         };
         let controls = row![
-            self.input("Tell the DJ what you're in the mood for (optional)", &self.dj_request)
+            self.input("What are you in the mood for?", &self.dj_request)
                 .on_input(Message::DjRequestChanged)
                 .on_submit(Message::DjStart)
                 .padding([11, 16])
@@ -1004,6 +1063,74 @@ impl App {
         self.picker(options, Some(selected), move |f| Message::Edit(edit(f)))
     }
 
+    /// The built-in app icons, plus your own when you've chosen one. Picking one sets the window,
+    /// taskbar and menu icon and the logo in the sidebar.
+    fn icon_picker(&self, size: f32) -> El<'_> {
+        let current = self.config.appearance.app_icon.trim();
+        let custom = !current.is_empty() && custom::builtin_icon(current).is_none();
+        let colors = self.colors;
+        let tile = move |handle: image::Handle, selected: bool, msg: Option<Message>| -> El<'_> {
+            button(image(handle).width(size).height(size))
+                .padding(3)
+                .style(move |_, status| {
+                    let color = if selected {
+                        colors.accent
+                    } else if status == button::Status::Hovered {
+                        style::tint(colors, 0.3)
+                    } else {
+                        iced::Color::TRANSPARENT
+                    };
+                    button::Style { border: iced::Border { color, width: 2.0, radius: (size * 0.3).into() }, ..button::Style::default() }
+                })
+                .on_press_maybe(msg)
+                .into()
+        };
+        let mut tiles: Vec<El> = self
+            .icon_choices
+            .iter()
+            .map(|(name, handle)| {
+                let selected = if current.is_empty() { *name == "haze" } else { name.eq_ignore_ascii_case(current) };
+                tile(handle.clone(), selected, Some(Message::SetIcon(name)))
+            })
+            .collect();
+        if custom {
+            tiles.push(tile(self.icon.clone(), true, None));
+        }
+        Row::with_children(tiles).spacing(4).wrap().into()
+    }
+
+    /// A row of pill tabs so Settings shows one group at a time.
+    fn settings_tabs(&self) -> El<'_> {
+        let tabs = SettingsTab::ALL.iter().map(|tab| {
+            let selected = *tab == self.settings_tab;
+            let colors = self.colors;
+            button(
+                row![icon(tab.icon(), self.fs(0.95)), text(tab.label()).size(self.fs(0.9)).font(self.weight(font::Weight::Semibold))]
+                    .spacing(7)
+                    .align_y(Alignment::Center),
+            )
+            .padding([7, 14])
+            .style(move |_, status| {
+                let background = if selected {
+                    colors.accent
+                } else if status == button::Status::Hovered {
+                    style::tint(colors, 0.16)
+                } else {
+                    style::tint(colors, 0.08)
+                };
+                button::Style {
+                    background: Some(iced::Background::Color(background)),
+                    text_color: if selected { style::readable_on(colors.accent) } else { colors.text },
+                    border: iced::Border { radius: 999.0.into(), ..iced::Border::default() },
+                    ..button::Style::default()
+                }
+            })
+            .on_press(Message::SettingsTab(*tab))
+            .into()
+        });
+        Row::with_children(tabs).spacing(8).wrap().into()
+    }
+
     fn section<'a>(&self, glyph: char, title: &'a str, rows: Vec<El<'a>>) -> El<'a> {
         let heading = row![icon(glyph, self.fs(1.2)).color(self.colors.accent), self.heading(title, 1.2)]
             .spacing(10)
@@ -1048,17 +1175,11 @@ impl App {
             self.field("TTS model", "gpt-4o-mini-tts", &dj.tts.model, Edit::TtsModel),
             self.number("Music volume while talking %", dj.tts.duck_to as f32, 0.0..=100.0, Edit::DuckTo),
         ];
-        let icon_controls = row![
-            image(self.icon.clone()).width(36).height(36),
-            self.small_button(Some(icon::IMAGE), "Choose image…", Message::PickIcon),
+        let icon_controls = column![
+            self.icon_picker(34.0),
+            self.small_button(Some(icon::IMAGE), "Use your own image…", Message::PickIcon),
         ]
-        .push(if a.app_icon.is_empty() {
-            El::from(self.muted("Built-in").wrapping(text::Wrapping::None))
-        } else {
-            self.small_button(Some(icon::ROTATE_CCW), "Reset", Message::ResetIcon)
-        })
-        .spacing(10)
-        .align_y(Alignment::Center);
+        .spacing(10);
         let look_rows = vec![
             self.setting(
                 "Theme",
@@ -1115,6 +1236,22 @@ impl App {
             self.setting("Player bar", self.picker(Edge::ALL, Some(l.player_bar), |e| Message::Edit(Edit::PlayerBar(e)))),
         ];
 
+        let update_rows = vec![
+            self.setting(
+                "Check at startup",
+                toggler(self.config.updates.check).on_toggle(|v| Message::Edit(Edit::CheckUpdates(v))).size(20),
+            ),
+            self.setting(
+                "Version",
+                row![
+                    text(format!("Haze {}", env!("CARGO_PKG_VERSION"))).size(self.fs(0.95)),
+                    self.small_button(None, "Check now", Message::CheckForUpdates(true)),
+                ]
+                .spacing(12)
+                .align_y(Alignment::Center),
+            ),
+        ];
+
         let form = column![
             self.heading("Settings", 2.0),
             self.muted(format!(
@@ -1128,11 +1265,19 @@ impl App {
             ]
             .spacing(10)
             .align_y(Alignment::Center),
-            self.section(icon::SPARKLES, "DJ", dj_rows),
-            self.section(icon::AUDIO_LINES, "DJ voice", voice_rows),
-            self.section(icon::PALETTE, "Appearance", look_rows),
-            self.section(icon::MIC_VOCAL, "Lyrics", lyrics_rows),
-            self.section(icon::SLIDERS_HORIZONTAL, "Layout", layout_rows),
+            self.settings_tabs(),
+            match self.settings_tab {
+                SettingsTab::Dj => column![
+                    self.section(icon::SPARKLES, "DJ", dj_rows),
+                    self.section(icon::AUDIO_LINES, "DJ voice", voice_rows)
+                ]
+                .spacing(16)
+                .into(),
+                SettingsTab::Look => self.section(icon::PALETTE, "Appearance", look_rows),
+                SettingsTab::Lyrics => self.section(icon::MIC_VOCAL, "Lyrics", lyrics_rows),
+                SettingsTab::Layout => self.section(icon::SLIDERS_HORIZONTAL, "Layout", layout_rows),
+                SettingsTab::Updates => self.section(icon::ROTATE_CCW, "Updates", update_rows),
+            },
         ]
         .spacing(16)
         .max_width(820);

@@ -198,7 +198,7 @@ impl App {
 
     fn look_step(&self) -> El<'_> {
         let tiles: Vec<El> = PRESETS.iter().map(|name| self.theme_tile(name)).collect();
-        let mut grid = Column::new().spacing(12);
+        let mut grid = Column::new().spacing(10);
         let mut tiles = tiles.into_iter().peekable();
         while tiles.peek().is_some() {
             grid = grid.push(Row::with_children(tiles.by_ref().take(3)).spacing(12));
@@ -212,7 +212,13 @@ impl App {
         .align_y(Alignment::Center);
         self.step(
             self.step_header(icon::PALETTE, "Choose a look", "Pick a theme. You can change it, and much more, in Settings."),
-            column![grid, accent].spacing(18).into(),
+            column![
+                grid,
+                accent,
+                row![text("App icon").size(self.fs(0.95)).width(Fill), self.icon_picker(28.0)].align_y(Alignment::Center),
+            ]
+            .spacing(18)
+            .into(),
             row![self.back_button(), Space::new().width(Fill), self.cta(None, "Continue", Some(Message::SetupNext), 1.0)]
                 .align_y(Alignment::Center)
                 .into(),
@@ -228,7 +234,6 @@ impl App {
         let lines = column![
             bar(Length::FillPortion(3), style::mix(c.surface, c.text, 0.35)),
             bar(Fill, style::mix(c.surface, c.text, 0.15)),
-            bar(Fill, style::mix(c.surface, c.text, 0.15)),
             container(Space::new()).width(26).height(10).style(style::tile(c.accent, 5.0)),
         ]
         .spacing(6);
@@ -241,7 +246,7 @@ impl App {
         )
         .padding(4)
         .width(Fill)
-        .height(74)
+        .height(58)
         .style(style::tile(c.background, self.r()));
         let colors = self.colors;
         let radius = self.r() * 1.2;
@@ -292,7 +297,7 @@ impl App {
             self.numbered(
                 1,
                 "Create an app on the Spotify dashboard. Any name and description will do.",
-                Some(self.small_button(Some(icon::EXTERNAL_LINK), "Open the dashboard", Message::OpenUrl(DASHBOARD))),
+                Some(self.small_button(Some(icon::EXTERNAL_LINK), "Open the dashboard", Message::OpenUrl(DASHBOARD.into()))),
             ),
             self.numbered(2, "Under Redirect URIs, add this address exactly:", Some(uri.into())),
             self.numbered(3, "Tick Web API and Web Playback SDK, save, and copy the Client ID from the app's Settings.", None),
@@ -386,7 +391,7 @@ impl App {
             self.step_header(
                 icon::LOG_IN,
                 "Log in",
-                "Your browser opens Spotify's login page. Approve Haze there, then come back here.",
+                "Your browser opens Spotify twice: once for your library and once so Haze can play music. Approve both, then come back here.",
             ),
             body,
             row![self.back_button(), Space::new().width(Fill)].into(),

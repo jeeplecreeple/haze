@@ -56,10 +56,6 @@ impl Api {
         Self { http, auth }
     }
 
-    pub fn auth(&self) -> &Auth {
-        &self.auth
-    }
-
     async fn get<T: DeserializeOwned>(&self, url: &str) -> Result<T> {
         let url = if url.starts_with("http") { url.to_string() } else { format!("{BASE}{url}") };
         for attempt in 0..3 {

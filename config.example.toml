@@ -6,6 +6,9 @@ client_id = ""
 # Must be registered on that app exactly as written.
 redirect_uri = "http://127.0.0.1:8898/login"
 
+[updates]
+check = true              # look for a new release on GitHub at startup
+
 [playback]
 bitrate = "high"          # low (96 kbps) | normal (160) | high (320)
 volume = 70               # 0-100
@@ -20,7 +23,7 @@ theme = "haze"
 font_size = 14.0
 font_family = ""          # empty = the built-in Inter; "system" = your system font; or any installed font / one in the "fonts" folder
 font_files = []           # extra .ttf/.otf files to load from anywhere
-app_icon = ""             # window/taskbar/app menu icon (PNG or JPG); empty = built-in. Settings sets it.
+app_icon = ""             # haze (empty), sunset, ocean, mint, midnight, mono, aurora, ember, or a PNG/JPG file
 accent_from_cover = false # tint the accent colour from the playing song's cover art
 corner_radius = 8.0
 show_album_art = true
@@ -62,7 +65,7 @@ lines_before = 2          # past lines kept on screen
 
 [dj]
 provider = "openai"       # openai (and any OpenAI-compatible API) | anthropic | gemini
-model = ""                # empty = gpt-4o-mini / claude-opus-5-5 / gemini-2.5-flash
+model = ""                # empty = gpt-4o-mini / claude-opus-5-5 / gemini-3.5-flash
 # Point the openai provider at any compatible API, for example:
 #   OpenRouter  https://openrouter.ai/api/v1
 #   Groq        https://api.groq.com/openai/v1

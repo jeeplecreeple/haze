@@ -23,6 +23,7 @@ use crate::queue::{Entry, Origin, Queue};
 use crate::spotify::api::{Api, Playlist, Track};
 use crate::spotify::auth::Auth;
 use crate::theme::{self, Colors};
+use crate::update;
 
 /// Player events flow from librespot's thread into the UI through this channel.
 static PLAYER_TX: OnceLock<UnboundedSender<PlayerUpdate>> = OnceLock::new();
@@ -36,7 +37,10 @@ pub fn run(config: Config) -> iced::Result {
     let _ = PLAYER_TX.set(tx);
     *PLAYER_RX.lock().expect("player channel") = Some(rx);
 
-    custom::migrate_menu_entry(&config.appearance.app_icon);
+    custom::migrate_menu_entry();
+    if let Err(e) = custom::sync_menu_entry(&config.appearance.app_icon) {
+        log::warn!("app menu entry: {e:#}");
+    }
     let (fonts, families) = custom::load_fonts(&config.appearance.font_files);
     if !families.is_empty() {
         log::info!("loaded fonts: {}", families.join(", "));
@@ -83,6 +87,56 @@ pub enum Page {
     Playlist(Playlist),
     Lyrics,
     Settings,
+}
+
+/// A newer release, and how far installing it has got.
+#[derive(Debug, Clone)]
+pub struct Update {
+    pub release: update::Release,
+    pub status: UpdateStatus,
+}
+
+#[derive(Debug, Clone)]
+pub enum UpdateStatus {
+    Available,
+    Installing,
+    /// Installed; restarting runs this program.
+    Installed(PathBuf),
+    Failed(String),
+}
+
+/// The groups on the Settings page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsTab {
+    Dj,
+    Look,
+    Lyrics,
+    Layout,
+    Updates,
+}
+
+impl SettingsTab {
+    pub const ALL: [SettingsTab; 5] = [Self::Dj, Self::Look, Self::Lyrics, Self::Layout, Self::Updates];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Dj => "DJ",
+            Self::Look => "Appearance",
+            Self::Lyrics => "Lyrics",
+            Self::Layout => "Layout",
+            Self::Updates => "Updates",
+        }
+    }
+
+    pub fn icon(self) -> char {
+        match self {
+            Self::Dj => icon::SPARKLES,
+            Self::Look => icon::PALETTE,
+            Self::Lyrics => icon::MIC_VOCAL,
+            Self::Layout => icon::SLIDERS_HORIZONTAL,
+            Self::Updates => icon::ROTATE_CCW,
+        }
+    }
 }
 
 /// The steps of the first-run setup, in order.
@@ -157,11 +211,19 @@ pub enum Message {
     Profile(Result<String, String>),
     Playlists(Result<Vec<Playlist>, String>),
     Logout,
+    /// Look for a new release; `true` when you asked, so "up to date" gets said.
+    CheckForUpdates(bool),
+    UpdateChecked(bool, Result<Option<update::Release>, String>),
+    InstallUpdate,
+    UpdateInstalled(Result<PathBuf, String>),
+    RestartForUpdate,
+    DismissUpdate,
+    SettingsTab(SettingsTab),
     SetupNext,
     SetupBack,
     SetupFinish,
     RunSetup,
-    OpenUrl(&'static str),
+    OpenUrl(String),
     CopyRedirectUri,
     /// A redraw while something animates.
     Frame,
@@ -212,7 +274,8 @@ pub enum Message {
     Edit(Edit),
     PickIcon,
     IconPicked(Option<PathBuf>),
-    ResetIcon,
+    /// A built-in icon by name.
+    SetIcon(&'static str),
     PickCover(String),
     CoverPicked(String, Option<PathBuf>),
     ResetCover(String),
@@ -266,6 +329,7 @@ pub enum Edit {
     Voice(String),
     TtsModel(String),
     DuckTo(f32),
+    CheckUpdates(bool),
 }
 
 #[derive(Debug, Clone)]
@@ -280,6 +344,10 @@ pub struct App {
     theme: Theme,
     pub login: Login,
     pub setup: Option<Setup>,
+    pub settings_tab: SettingsTab,
+    /// Songs Spotify refused one after another; playback stops after a few.
+    unavailable_in_a_row: u8,
+    pub update: Option<Update>,
     pub client_id_input: String,
     api: Option<Api>,
     audio: Option<Arc<Audio>>,
@@ -306,6 +374,8 @@ pub struct App {
     /// Family names of the fonts in the fonts folder and `font_files`.
     pub font_families: Vec<String>,
     pub icon: image::Handle,
+    /// The built-in icons, decoded once for the pickers.
+    pub icon_choices: Vec<(&'static str, image::Handle)>,
 
     pub lyrics: Option<Lyrics>,
     lyrics_for: Option<String>,
@@ -338,6 +408,9 @@ impl App {
             colors,
             login: if has_client { Login::LoggedOut } else { Login::NeedsClientId },
             setup: (!has_client).then(|| Setup::new(SetupStep::Hello)),
+            update: None,
+            settings_tab: SettingsTab::Dj,
+            unavailable_in_a_row: 0,
             client_id_input: config.spotify.client_id.clone(),
             api: None,
             audio: None,
@@ -362,6 +435,7 @@ impl App {
             theme_names: Vec::new(),
             font_families,
             icon: icon_handle(&config.appearance.app_icon),
+            icon_choices: custom::BUILTIN_ICONS.iter().map(|(name, bytes)| (*name, image::Handle::from_bytes(*bytes))).collect(),
             lyrics: None,
             lyrics_for: None,
             lyrics_loading: false,
@@ -397,11 +471,15 @@ impl App {
         }
         if demo.is_some() {
             app.load_demo();
+            if demo.as_deref() == Some("update") {
+                app.update = Some(Update { release: update::Release::demo(), status: UpdateStatus::Available });
+            }
             return (app, Task::none());
         }
         // Log straight back in when a previous login is cached.
-        let task = if has_client && Auth::has_cached_login() { Task::done(Message::Login) } else { Task::none() };
-        (app, task)
+        let login = if has_client && Auth::has_cached_login() { Task::done(Message::Login) } else { Task::none() };
+        let check = if app.config.updates.check { Task::done(Message::CheckForUpdates(false)) } else { Task::none() };
+        (app, Task::batch([login, check]))
     }
 
     fn title(&self) -> String {
@@ -533,6 +611,12 @@ impl App {
             return Task::none();
         };
         window::latest().and_then(move |id| window::set_icon(id, icon.clone()))
+    }
+
+    fn sync_menu_entry(&mut self) {
+        if let Err(e) = custom::sync_menu_entry(&self.config.appearance.app_icon) {
+            log::warn!("app menu entry: {e:#}");
+        }
     }
 
     fn save_quietly(&mut self) {
@@ -793,7 +877,7 @@ impl App {
                 let playback = self.config.playback.clone();
                 return Task::batch([
                     Task::perform(
-                        async move { Audio::connect(api.auth().clone(), playback, tx).await.map(Arc::new).map_err(err) },
+                        async move { Audio::connect(playback, tx).await.map(Arc::new).map_err(err) },
                         Message::AudioReady,
                     ),
                     Task::perform(async move { a1.display_name().await.map_err(err) }, Message::Profile),
@@ -807,7 +891,12 @@ impl App {
             Message::AudioReady(Ok(audio)) => self.audio = Some(audio),
             Message::AudioReady(Err(e)) => self.notify(e, true),
             Message::Profile(Ok(name)) => self.user_name = name,
-            Message::Playlists(Ok(list)) => self.playlists = list,
+            Message::Playlists(Ok(list)) => {
+                self.playlists = list;
+                // Covers for the sidebar. They stay loaded (see Message::Image).
+                let urls: Vec<String> = self.playlists.iter().filter_map(|p| p.image_url.clone()).collect();
+                return Task::batch(urls.iter().map(|u| self.fetch_image(Some(u))));
+            }
             Message::Profile(Err(e)) | Message::Playlists(Err(e)) => self.notify(e, true),
             Message::Logout => {
                 if let Some(audio) = &self.audio {
@@ -842,7 +931,7 @@ impl App {
                 }
             }
             Message::RunSetup => self.setup = Some(Setup::new(SetupStep::Hello)),
-            Message::OpenUrl(url) => custom::open_url(url),
+            Message::OpenUrl(url) => custom::open_url(&url),
             Message::CopyRedirectUri => {
                 if let Some(setup) = &mut self.setup {
                     setup.copied = Some(Instant::now());
@@ -963,7 +1052,10 @@ impl App {
             Message::ClearQueue => self.queue.clear_up_next(),
             Message::Image(url, Ok(bytes)) => {
                 self.images.insert(url.clone(), image::Handle::from_bytes(bytes));
-                self.image_order.push(url);
+                // Playlist covers are always on screen in the sidebar, so only song covers expire.
+                if !self.playlists.iter().any(|p| p.image_url.as_ref() == Some(&url)) {
+                    self.image_order.push(url);
+                }
                 while self.image_order.len() > IMAGE_CACHE {
                     let old = self.image_order.remove(0);
                     self.images.remove(&old);
@@ -1085,9 +1177,7 @@ impl App {
                     custom::remove_imported(&self.config.appearance.app_icon, "icons");
                     self.config.appearance.app_icon = saved.display().to_string();
                     self.save_quietly();
-                    if let Err(e) = custom::update_menu_entry(Some(&saved)) {
-                        log::warn!("app menu entry: {e:#}");
-                    }
+                    self.sync_menu_entry();
                     self.notify(
                         if cfg!(target_os = "macos") {
                             "Icon set for the window. To change the Dock icon, use Get Info on Haze.app in Finder."
@@ -1100,13 +1190,11 @@ impl App {
                 }
                 Err(e) => self.notify(format!("Couldn't use that image: {e:#}"), true),
             },
-            Message::ResetIcon => {
+            Message::SetIcon(name) => {
                 custom::remove_imported(&self.config.appearance.app_icon, "icons");
-                self.config.appearance.app_icon.clear();
+                self.config.appearance.app_icon = if name == "haze" { String::new() } else { name.to_string() };
                 self.save_quietly();
-                if let Err(e) = custom::update_menu_entry(None) {
-                    log::warn!("app menu entry: {e:#}");
-                }
+                self.sync_menu_entry();
                 return self.apply_icon();
             }
             Message::PickCover(key) => {
@@ -1171,6 +1259,39 @@ impl App {
             },
             Message::ToggleSidePanel => self.show_side_panel = !self.show_side_panel,
             Message::DismissNotice => self.notice = None,
+            Message::CheckForUpdates(asked) => {
+                return Task::perform(async { update::check().await.map_err(err) }, move |r| Message::UpdateChecked(asked, r));
+            }
+            Message::UpdateChecked(asked, result) => match result {
+                Ok(Some(release)) => self.update = Some(Update { release, status: UpdateStatus::Available }),
+                Ok(None) if asked => self.notify(format!("Haze {} is up to date", env!("CARGO_PKG_VERSION")), false),
+                Ok(None) => {}
+                Err(e) if asked => self.notify(format!("Couldn't check for updates: {e}"), true),
+                Err(e) => log::info!("update check: {e}"),
+            },
+            Message::InstallUpdate => {
+                if let Some(u) = &mut self.update {
+                    u.status = UpdateStatus::Installing;
+                    let release = u.release.clone();
+                    return Task::perform(async move { update::install(release).await.map_err(err) }, Message::UpdateInstalled);
+                }
+            }
+            Message::UpdateInstalled(result) => {
+                if let Some(u) = &mut self.update {
+                    u.status = match result {
+                        Ok(program) => UpdateStatus::Installed(program),
+                        Err(e) => UpdateStatus::Failed(e),
+                    };
+                }
+            }
+            Message::RestartForUpdate => {
+                if let Some(Update { status: UpdateStatus::Installed(program), .. }) = &self.update {
+                    let _ = self.config.save();
+                    update::restart(program);
+                }
+            }
+            Message::DismissUpdate => self.update = None,
+            Message::SettingsTab(tab) => self.settings_tab = tab,
             Message::Key(event) => {
                 if self.fullscreen
                     && let keyboard::Event::KeyPressed { key: keyboard::Key::Named(keyboard::key::Named::Escape), .. } =
@@ -1191,6 +1312,7 @@ impl App {
         let is_current = |uri: &str| current_uri.as_deref() == Some(uri);
         match update {
             PlayerUpdate::Playing { uri, position_ms } if is_current(&uri) => {
+                self.unavailable_in_a_row = 0;
                 self.playing = true;
                 self.set_position(position_ms);
             }
@@ -1217,7 +1339,16 @@ impl App {
                 return self.maybe_refill();
             }
             PlayerUpdate::Unavailable { uri } if is_current(&uri) => {
-                self.notify("That track isn't available here; skipping", true);
+                self.unavailable_in_a_row += 1;
+                let why = crate::player::take_last_problem().map(|p| format!(" Spotify said: {p}")).unwrap_or_default();
+                if self.unavailable_in_a_row >= 3 {
+                    // Something is wrong with playback as a whole; don't run through the whole queue.
+                    self.unavailable_in_a_row = 0;
+                    self.playing = false;
+                    self.notify(format!("Spotify wouldn't play the last few songs, so playback stopped.{why}"), true);
+                    return Task::none();
+                }
+                self.notify(format!("That song isn't available, so it was skipped.{why}"), true);
                 if self.queue.advance(true).is_some() {
                     return self.play_current();
                 }
@@ -1277,6 +1408,7 @@ impl App {
             Voice(s) => dj.tts.voice = s,
             TtsModel(s) => dj.tts.model = s,
             DuckTo(v) => dj.tts.duck_to = v as u8,
+            CheckUpdates(v) => self.config.updates.check = v,
         }
         if recolour_cover {
             self.update_cover_fx(true);
@@ -1297,6 +1429,7 @@ impl App {
             image_url: None,
         };
         self.login = Login::LoggedIn;
+        self.setup = None;
         self.user_name = "Haz".into();
         self.playlists = ["Late Night Drive", "Gym", "Focus", "Indie Finds"]
             .iter()
@@ -1325,6 +1458,10 @@ impl App {
         }
         self.page = match std::env::var("HAZE_DEMO").as_deref() {
             Ok("settings") => Page::Settings,
+            Ok("settings-look") => {
+                self.settings_tab = SettingsTab::Look;
+                Page::Settings
+            }
             Ok("tracks") => Page::Liked,
             Ok("lyrics") => Page::Lyrics,
             _ => Page::Dj,
@@ -1364,10 +1501,11 @@ impl App {
     }
 }
 
-fn icon_handle(path: &str) -> image::Handle {
-    match crate::config::non_empty(path) {
-        Some(p) if std::path::Path::new(p).exists() => image::Handle::from_path(p),
-        _ => image::Handle::from_bytes(custom::BUILTIN_ICON),
+fn icon_handle(app_icon: &str) -> image::Handle {
+    match custom::builtin_icon(app_icon) {
+        Some(bytes) => image::Handle::from_bytes(bytes),
+        None if std::path::Path::new(app_icon.trim()).exists() => image::Handle::from_path(app_icon.trim()),
+        None => image::Handle::from_bytes(custom::BUILTIN_ICON),
     }
 }
 

@@ -72,6 +72,7 @@ pub struct Config {
     pub dj: DjConfig,
     pub lyrics: LyricsConfig,
     pub keys: Keybindings,
+    pub updates: UpdateConfig,
     /// Your own cover images, by playlist id ("liked" for Liked Songs). Set them from the app.
     pub covers: std::collections::BTreeMap<String, String>,
 }
@@ -142,6 +143,19 @@ pub enum Bitrate {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+pub struct UpdateConfig {
+    /// Look for a new release on GitHub when Haze starts.
+    pub check: bool,
+}
+
+impl Default for UpdateConfig {
+    fn default() -> Self {
+        Self { check: true }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PlaybackConfig {
     /// low = 96 kbps, normal = 160 kbps, high = 320 kbps
     pub bitrate: Bitrate,
@@ -179,7 +193,8 @@ pub struct Appearance {
     pub font_family: String,
     /// Extra font files to load, anywhere on disk.
     pub font_files: Vec<String>,
-    /// Window and taskbar icon (PNG/JPG). Empty = the built-in icon.
+    /// The app icon: a built-in one by name (haze, sunset, ocean, mint, midnight, mono, aurora,
+    /// ember) or a PNG/JPG file. Empty = haze.
     pub app_icon: String,
     /// Tint the accent colour from the current song's cover art.
     pub accent_from_cover: bool,
@@ -364,7 +379,7 @@ impl LlmProvider {
         match self {
             LlmProvider::OpenAI => "gpt-4o-mini",
             LlmProvider::Anthropic => "claude-opus-5-5",
-            LlmProvider::Gemini => "gemini-2.5-flash",
+            LlmProvider::Gemini => "gemini-3.5-flash",
         }
     }
 
@@ -610,7 +625,7 @@ mod tests {
         assert_eq!(config.appearance.theme, "nord");
         assert_eq!(config.dj.provider, LlmProvider::Gemini);
         assert_eq!(config.dj.mode, DjMode::Voice);
-        assert_eq!(config.dj.model(), "gemini-2.5-flash");
+        assert_eq!(config.dj.model(), "gemini-3.5-flash");
         assert_eq!(config.layout.sidebar, Side::Left);
     }
 

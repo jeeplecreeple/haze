@@ -24,7 +24,7 @@ const SCOPES: &[&str] = &[
     "user-read-recently-played",
 ];
 
-const LOGIN_PAGE: &str = "<html><body style=\"font-family:sans-serif;background:#0f0f14;color:#f1f1f5;\
+pub const LOGIN_PAGE: &str = "<html><body style=\"font-family:sans-serif;background:#0f0f14;color:#f1f1f5;\
 text-align:center;padding-top:20vh\"><h1>Haze is logged in</h1><p>You can close this tab.</p></body></html>";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -135,6 +135,7 @@ impl Auth {
     }
 
     pub fn logout() -> Result<()> {
+        crate::player::forget_playback_login();
         let path = token_path()?;
         if path.exists() {
             std::fs::remove_file(path)?;

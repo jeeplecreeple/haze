@@ -106,13 +106,13 @@ The Client ID isn't a password. Haze logs in with PKCE, which doesn't need a cli
 
 The first time you start Haze, a short setup walks you through it: after the hello, pick a theme,
 paste the Client ID from step 2, add a DJ key if you like (or **Set up later**), and click
-**Log in with Spotify**. Your browser opens Spotify's login page; approve the permissions, then
-go back to Haze. The setup links to the Spotify dashboard and has a **Copy** button for the
+**Log in with Spotify**. Your browser opens Spotify twice: once for your library and once so Haze
+can play music (Spotify only streams to its own player login). Approve both, then go back to Haze. The setup links to the Spotify dashboard and has a **Copy** button for the
 Redirect URI, so you can do step 2 from there too.
 
 **Settings → Run setup again** brings the setup back whenever you want.
 
-Haze remembers the login, so later launches go straight to your library. **Settings → Log out
+Haze remembers both logins, so later launches go straight to your library. **Settings → Log out
 of Spotify** forgets it.
 
 ## 4. Play your music
@@ -281,14 +281,26 @@ lyrics, so it looks the same everywhere. Pick **System font** to use your deskto
 it to the **App font** and **Lyrics font** lists. Fonts installed on your system work too: type the
 name under **…or an installed font**.
 
-### Your own app icon
+### Your app icon
 
-**Settings → Appearance → App icon → Choose image…** takes a PNG or JPG; square works best. It
-becomes the window and taskbar icon straight away. On Linux, Haze also writes a menu entry
-(`~/.local/share/applications/haze.desktop`) so your launcher and dock use it too. On macOS this
+**Settings → Appearance → App icon** has eight built-in icons to pick from (the setup offers them
+too), and **Use your own image…** takes a PNG or JPG; square works best. The icon changes in the
+window, the taskbar and the logo in the sidebar straight away. On Linux, Haze also writes a menu
+entry (`~/.local/share/applications/haze.desktop`) so your launcher and dock use it too. On macOS this
 only changes the window icon: to change the Dock icon, select Haze.app in Finder, choose
 **Get Info**, and paste your image onto the small icon at the top. **Reset** brings back the
 built-in icon.
+
+### Updates
+
+Haze checks GitHub for a new version when it starts (turn that off under **Settings → Updates**,
+which also has **Check now**). When there is one, a strip across the top offers it:
+
+- If you run Haze from the .tar.gz, the macOS app or the Windows zip, **Update now** downloads the
+  new version and swaps it in; **Restart now** starts it.
+- If a package manager installed it (the .deb or pacman), Haze can't replace its files, so
+  **Download** opens the release page. On Arch, update with the `git pull` and `makepkg -Csi`
+  steps above.
 
 ### Your own playlist covers
 
@@ -318,6 +330,8 @@ You can change any of them under `[keys]` in the config file.
 | "INVALID_CLIENT: Invalid redirect URI" in the browser | The redirect URI on your Spotify app must be exactly `http://127.0.0.1:8898/login`. |
 | Login says the address is in use | Something else is using port 8898. Close it, or change `redirect_uri` in the config file and on your Spotify app to another port. |
 | "Premium is required" or nothing plays | Playback needs Spotify Premium on the account you logged in with. |
+| Every song says it isn't available | Haze needs its second, playback login. Log out under **Settings**, log in again, and approve both browser pages. The message also shows what Spotify said, which helps in an issue. |
+| The taskbar shows a generic icon (Linux) | Docks find the icon through Haze's menu entry. Packages install one; when you run Haze from the .tar.gz it writes its own to `~/.local/share/applications` the first time it starts. Log out and back in if your desktop still shows the old one. |
 | Spotify returns 403 for your account | Your Spotify app is in development mode, which only allows accounts listed under **User Management** on the dashboard. Add your account's email there. |
 | "No API key for the DJ" | Add the key in Settings, or set the environment variable from [the table above](#add-an-api-key) and restart. |
 | The DJ says its picks couldn't be found | The model named songs Spotify doesn't have. Try again, or use a larger model. |

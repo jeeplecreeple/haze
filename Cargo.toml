@@ -1,6 +1,6 @@
 [package]
 name = "haze"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "A native, lightweight, heavily customisable Spotify client with an AI DJ"
 license = "MIT"
@@ -34,6 +34,12 @@ librespot-playback = { version = "0.8", default-features = false, features = ["r
 rodio = { version = "0.21", default-features = false, features = ["playback", "mp3", "wav"] }
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 
+# The updater: compares release versions and unpacks the downloaded build.
+semver = "1"
+flate2 = "1"
+tar = "0.4"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
 [profile.release]
 opt-level = 3
 lto = "thin"
@@ -52,4 +58,5 @@ assets = [
     ["target/release/haze", "usr/bin/", "755"],
     ["packaging/linux/haze.desktop", "usr/share/applications/", "644"],
     ["assets/icon.png", "usr/share/icons/hicolor/256x256/apps/haze.png", "644"],
+    ["assets/icon.png", "usr/share/pixmaps/haze.png", "644"],
 ]

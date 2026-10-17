@@ -12,13 +12,38 @@ use crate::config;
 
 pub const BUILTIN_ICON: &[u8] = include_bytes!("../../assets/icon.png");
 
-/// The window icon from `app_icon`, or the built-in one.
-pub fn window_icon(path: &str) -> Option<window::Icon> {
-    let bytes = match config::non_empty(path) {
-        Some(p) => std::fs::read(p).map_err(|e| log::warn!("app icon {p}: {e}")).ok(),
-        None => None,
-    };
-    let img = ::image::load_from_memory(bytes.as_deref().unwrap_or(BUILTIN_ICON))
+/// The icons Haze comes with. `app_icon` takes one of these names, or the path to an image.
+pub const BUILTIN_ICONS: [(&str, &[u8]); 8] = [
+    ("haze", BUILTIN_ICON),
+    ("sunset", include_bytes!("../../assets/icons/sunset.png")),
+    ("ocean", include_bytes!("../../assets/icons/ocean.png")),
+    ("mint", include_bytes!("../../assets/icons/mint.png")),
+    ("midnight", include_bytes!("../../assets/icons/midnight.png")),
+    ("mono", include_bytes!("../../assets/icons/mono.png")),
+    ("aurora", include_bytes!("../../assets/icons/aurora.png")),
+    ("ember", include_bytes!("../../assets/icons/ember.png")),
+];
+
+/// A built-in icon by name. Empty means the default one.
+pub fn builtin_icon(name: &str) -> Option<&'static [u8]> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Some(BUILTIN_ICON);
+    }
+    BUILTIN_ICONS.iter().find(|(n, _)| n.eq_ignore_ascii_case(name)).map(|(_, bytes)| *bytes)
+}
+
+/// The image for `app_icon`: a built-in icon, an image file, or the default when the file is gone.
+pub fn icon_bytes(app_icon: &str) -> std::borrow::Cow<'static, [u8]> {
+    if let Some(bytes) = builtin_icon(app_icon) {
+        return bytes.into();
+    }
+    std::fs::read(app_icon.trim()).map_err(|e| log::warn!("app icon {app_icon}: {e}")).map_or(BUILTIN_ICON.into(), Into::into)
+}
+
+/// The window icon from `app_icon`.
+pub fn window_icon(app_icon: &str) -> Option<window::Icon> {
+    let img = ::image::load_from_memory(&icon_bytes(app_icon))
         .or_else(|_| ::image::load_from_memory(BUILTIN_ICON))
         .ok()?
         .thumbnail(256, 256)
@@ -69,52 +94,77 @@ pub async fn pick_font() -> Option<PathBuf> {
 
 const MENU_ENTRY_MARK: &str = "# Written by Haze for your custom icon.";
 
-fn menu_entry_path() -> Option<PathBuf> {
-    let data = std::env::var_os("XDG_DATA_HOME")
+fn data_home() -> Option<PathBuf> {
+    std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))?;
-    Some(data.join("applications/haze.desktop"))
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
 }
 
-/// On Linux the launcher and (on Wayland) the taskbar take the icon from the app's desktop entry,
-/// so a custom icon also writes a per-user entry that points at it. `None` removes that entry.
-pub fn update_menu_entry(icon: Option<&Path>) -> Result<()> {
+fn menu_entry_path() -> Option<PathBuf> {
+    Some(data_home()?.join("applications/haze.desktop"))
+}
+
+/// Whether a package installed Haze's desktop entry (the .deb, pacman, or a system-wide copy).
+fn installed_entry_exists() -> bool {
+    let dirs = std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into());
+    dirs.split(':').filter(|d| !d.is_empty()).any(|d| Path::new(d).join("applications/haze.desktop").exists())
+}
+
+/// On Linux, docks and launchers (and on Wayland, the taskbar) take the icon from the desktop
+/// entry named after the app, not from the window. So this keeps a per-user entry in step:
+/// one pointing at the chosen icon when it isn't the default, and when Haze runs without an
+/// installed entry (from the .tar.gz or a build folder) one that uses the default icon.
+pub fn sync_menu_entry(app_icon: &str) -> Result<()> {
     if !cfg!(target_os = "linux") {
         return Ok(());
     }
     let Some(path) = menu_entry_path() else { return Ok(()) };
-    let ours = std::fs::read_to_string(&path).map(|s| s.contains(MENU_ENTRY_MARK));
-    match icon {
-        None => {
-            if ours.unwrap_or(false) {
+    let name = app_icon.trim();
+    let icon = if name.is_empty() || name.eq_ignore_ascii_case("haze") {
+        if installed_entry_exists() {
+            // The package's entry already has the right icon; drop any custom one of ours.
+            if std::fs::read_to_string(&path).is_ok_and(|s| s.contains(MENU_ENTRY_MARK)) {
                 std::fs::remove_file(&path)?;
             }
+            return Ok(());
         }
-        Some(icon) => {
-            if ours.as_ref().is_ok_and(|ours| !ours) {
-                // The user wrote their own entry; leave it alone.
-                return Ok(());
-            }
-            let exe = std::env::current_exe()?;
-            std::fs::create_dir_all(path.parent().expect("has parent"))?;
-            std::fs::write(
-                &path,
-                format!(
-                    "{MENU_ENTRY_MARK}\n[Desktop Entry]\nType=Application\nName=Haze\n\
-                     Comment=Lightweight Spotify client with an AI DJ\nExec=\"{}\"\nIcon={}\n\
-                     Terminal=false\nCategories=Audio;Music;Player;AudioVideo;\nStartupWMClass=haze\n",
-                    exe.display(),
-                    icon.display()
-                ),
-            )?;
+        let file = data_home().context("no home folder")?.join("icons/hicolor/256x256/apps/haze.png");
+        if std::fs::read(&file).ok().as_deref() != Some(BUILTIN_ICON) {
+            std::fs::create_dir_all(file.parent().expect("has parent"))?;
+            std::fs::write(&file, BUILTIN_ICON)?;
         }
+        "haze".to_string()
+    } else if let Some(bytes) = builtin_icon(name) {
+        let file = config::data_dir("icons")?.join(format!("builtin-{}.png", name.to_ascii_lowercase()));
+        if !file.exists() {
+            std::fs::write(&file, bytes)?;
+        }
+        file.display().to_string()
+    } else {
+        name.to_string()
+    };
+    let current = std::fs::read_to_string(&path);
+    if current.as_ref().is_ok_and(|s| !s.contains(MENU_ENTRY_MARK)) {
+        // You wrote your own entry; leave it alone.
+        return Ok(());
+    }
+    let exe = std::env::current_exe()?;
+    let entry = format!(
+        "{MENU_ENTRY_MARK}\n[Desktop Entry]\nType=Application\nName=Haze\n\
+         Comment=Lightweight Spotify client with an AI DJ\nExec=\"{}\"\nIcon={icon}\n\
+         Terminal=false\nCategories=Audio;Music;Player;AudioVideo;\nStartupWMClass=haze\n",
+        exe.display(),
+    );
+    if current.ok().as_deref() != Some(entry.as_str()) {
+        std::fs::create_dir_all(path.parent().expect("has parent"))?;
+        std::fs::write(&path, entry)?;
     }
     Ok(())
 }
 
 /// A custom-icon menu entry written under the app's old name points at the old program, so it is
 /// replaced with one under the new name.
-pub fn migrate_menu_entry(app_icon: &str) {
+pub fn migrate_menu_entry() {
     let Some(new) = menu_entry_path() else { return };
     let old = new.with_file_name(format!("{}.desktop", config::OLD_NAME));
     // Its first line is MENU_ENTRY_MARK with the old name in it.
@@ -123,11 +173,6 @@ pub fn migrate_menu_entry(app_icon: &str) {
         return;
     }
     let _ = std::fs::remove_file(&old);
-    if let Some(icon) = config::non_empty(app_icon)
-        && let Err(e) = update_menu_entry(Some(Path::new(icon)))
-    {
-        log::warn!("menu entry: {e}");
-    }
 }
 
 /// A font file's family name, which is what `font_family` has to match.
