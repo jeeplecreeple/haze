@@ -16,14 +16,20 @@ that runs on **your own** LLM API key.
   they're sung with a shine on the edge, lines glide into place, a blurred cover-art background,
   instrumental-break dots, click a line to jump there, full screen. Lyrics come from Spotify and
   [LRCLIB](https://lrclib.net), in the order you pick.
+- **A heavily customisable Now Playing page.** The cover cut into a wavy cookie (or flower,
+  squircle, circle...) inside a ring of bars that move with the music, a wavy seek bar, big
+  controls and lyrics beside it. Five ready-made looks, and every part (shapes, visualizer style,
+  colours, sizes, controls, layout) can be changed in Settings.
+- **Plugins.** Install from a GitHub repo, a link or a .zip. Plugins add themes and layouts, and
+  can run commands when a song changes (notifications, an OBS now-playing file...).
 - **Updates itself.** Checks GitHub for new versions and, outside a package manager, installs them
   with one click.
 - **Looks the part.** Glassy panels over a glow of the current song's cover, Inter type and Lucide
   icons built in, so it looks the same on Linux, Windows and macOS.
-- **Customisable.** Themes (including Apple Music light and dark) or your own theme files, colours,
-  an accent that follows the cover art, your own fonts, eight built-in app icons or your own, your own playlist
-  covers, corner radius, compact rows, which side the sidebar and queue sit on, player bar on top or
-  bottom, track columns, keyboard shortcuts.
+- **Customisable.** Themes (including Apple Music light and dark), a theme maker with live preview
+  that can share themes as text, an accent that follows the cover art, a layout editor and saved
+  layouts, your own fonts, eight built-in app icons or your own (also used for the desktop shortcut
+  and Dock), your own playlist covers, corner radius, compact rows, and a shortcut editor.
 - Linux (Arch, Debian, Ubuntu, Fedora, ...), Windows and macOS.
 
 > ⚠️ **The macOS and Windows builds are NOT tested.** They compile in CI, but nobody has played
@@ -94,7 +100,7 @@ sync your dotfiles.
 `renderer = "cpu"` (default) uses the lightweight software renderer; `"gpu"` uses Vulkan, Metal or
 DirectX via wgpu, which is smoother on big/high-refresh screens but costs more memory.
 
-Set `HAZE_DEMO=1` (or `=tracks`, `=lyrics`, `=settings`, `=setup`) to open the UI with sample data and no login, handy
+Set `HAZE_DEMO=1` (or `=tracks`, `=lyrics`, `=player`, `=settings`, `=setup`) to open the UI with sample data and no login, handy
 for trying themes and layouts.
 
 ## Building
@@ -123,8 +129,9 @@ on every push, and pushing a `v*` tag publishes them as a GitHub release.
 ## Default shortcuts
 
 `Ctrl+Space` play/pause · `Ctrl+→/←` next/previous · `Shift+→/←` seek 10 s · `Ctrl+↑/↓` volume ·
-`Ctrl+F` search · `Ctrl+B` queue panel · `Ctrl+D` start the DJ · `Ctrl+L` lyrics. Media keys work too. `Ctrl` also
-means `Cmd` on macOS. Rebind any of them under `[keys]`.
+`Ctrl+F` search · `Ctrl+B` queue panel · `Ctrl+D` start the DJ · `Ctrl+L` lyrics · `Ctrl+P` Now Playing ·
+`F11` full screen. Media keys work too. `Ctrl` also means `Cmd` on macOS. Change any of them in
+**Settings → Shortcuts**.
 
 ## Notes
 

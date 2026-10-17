@@ -10,6 +10,9 @@ use anyhow::{Context, Result};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 
+mod player;
+pub use player::*;
+
 pub fn dirs() -> Result<ProjectDirs> {
     ProjectDirs::from("", "", "haze").context("could not determine a home directory")
 }
@@ -71,10 +74,12 @@ pub struct Config {
     pub playback: PlaybackConfig,
     pub appearance: Appearance,
     pub layout: Layout,
+    pub player: PlayerStyle,
     pub dj: DjConfig,
     pub lyrics: LyricsConfig,
     pub keys: Keybindings,
     pub updates: UpdateConfig,
+    pub plugins: PluginsConfig,
     /// Your own cover images, by playlist id ("liked" for Liked Songs). Set them from the app.
     pub covers: std::collections::BTreeMap<String, String>,
 }
@@ -141,6 +146,13 @@ pub enum Bitrate {
     Low,
     Normal,
     High,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PluginsConfig {
+    /// Folder names of the plugins in the `plugins` folder that are switched on.
+    pub enabled: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -357,10 +369,6 @@ impl Side {
     pub const ALL: [Side; 2] = [Side::Left, Side::Right];
 }
 
-impl Edge {
-    pub const ALL: [Edge; 2] = [Edge::Top, Edge::Bottom];
-}
-
 impl std::fmt::Display for Side {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
@@ -382,6 +390,7 @@ impl std::fmt::Display for Edge {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Layout {
+    pub show_sidebar: bool,
     pub sidebar: Side,
     pub sidebar_width: f32,
     pub player_bar: Edge,
@@ -391,11 +400,16 @@ pub struct Layout {
     pub side_panel_width: f32,
     /// Columns shown in track lists, in order: title, artist, album, duration.
     pub track_columns: Vec<String>,
+    /// Space between the panels, in pixels.
+    pub gap: f32,
+    /// Space inside the main panel, in pixels.
+    pub padding: f32,
 }
 
 impl Default for Layout {
     fn default() -> Self {
         Self {
+            show_sidebar: true,
             sidebar: Side::Left,
             sidebar_width: 220.0,
             player_bar: Edge::Bottom,
@@ -403,6 +417,8 @@ impl Default for Layout {
             side_panel: Side::Right,
             side_panel_width: 300.0,
             track_columns: vec!["title".into(), "artist".into(), "album".into(), "duration".into()],
+            gap: 8.0,
+            padding: 24.0,
         }
     }
 }
@@ -685,6 +701,55 @@ pub struct Keybindings {
     pub toggle_side_panel: String,
     pub dj_now: String,
     pub lyrics: String,
+    pub now_playing: String,
+    pub fullscreen: String,
+}
+
+impl Keybindings {
+    /// What each shortcut does, in the order Settings > Shortcuts lists them.
+    pub const ACTIONS: [&str; 13] = [
+        "Play or pause",
+        "Next song",
+        "Previous song",
+        "Volume up",
+        "Volume down",
+        "Skip forward 10 seconds",
+        "Skip back 10 seconds",
+        "Search",
+        "Show or hide the queue",
+        "Start the DJ",
+        "Lyrics",
+        "Now Playing",
+        "Full screen",
+    ];
+
+    fn slots(&mut self) -> [&mut String; 13] {
+        [
+            &mut self.play_pause,
+            &mut self.next,
+            &mut self.previous,
+            &mut self.volume_up,
+            &mut self.volume_down,
+            &mut self.seek_forward,
+            &mut self.seek_back,
+            &mut self.search,
+            &mut self.toggle_side_panel,
+            &mut self.dj_now,
+            &mut self.lyrics,
+            &mut self.now_playing,
+            &mut self.fullscreen,
+        ]
+    }
+
+    pub fn get(&self, i: usize) -> String {
+        self.clone().slots().get_mut(i).map(|s| s.to_string()).unwrap_or_default()
+    }
+
+    pub fn set(&mut self, i: usize, chord: String) {
+        if let Some(slot) = self.slots().into_iter().nth(i) {
+            *slot = chord;
+        }
+    }
 }
 
 impl Default for Keybindings {
@@ -701,6 +766,8 @@ impl Default for Keybindings {
             toggle_side_panel: "ctrl+b".into(),
             dj_now: "ctrl+d".into(),
             lyrics: "ctrl+l".into(),
+            now_playing: "ctrl+p".into(),
+            fullscreen: "f11".into(),
         }
     }
 }
@@ -766,6 +833,22 @@ mod tests {
     fn example_config_parses() {
         let config: Config = toml::from_str(include_str!("../config.example.toml")).unwrap();
         assert_eq!(config.dj.tts.duck_to, 25);
+        // The example shows the defaults.
+        let same = |a: &dyn erased::Ser, b: &dyn erased::Ser| assert_eq!(a.text(), b.text());
+        same(&config.player, &PlayerStyle::default());
+        same(&config.layout, &Layout::default());
+        same(&config.keys, &Keybindings::default());
+    }
+
+    mod erased {
+        pub trait Ser {
+            fn text(&self) -> String;
+        }
+        impl<T: serde::Serialize> Ser for T {
+            fn text(&self) -> String {
+                toml::to_string(self).unwrap()
+            }
+        }
     }
 
     #[test]

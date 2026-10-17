@@ -15,10 +15,12 @@ Haze was built and tested on CachyOS. Please [Open a issue](https://github.com/j
 3. [Log in](#3-log-in)
 4. [Play your music](#4-play-your-music)
 5. [Set up the DJ](#5-set-up-the-dj)
-6. [Lyrics](#6-lyrics)
-7. [Make it yours](#7-make-it-yours)
-8. [Keyboard shortcuts](#8-keyboard-shortcuts)
-9. [Troubleshooting](#9-troubleshooting)
+6. [Now Playing](#6-now-playing)
+7. [Lyrics](#7-lyrics)
+8. [Make it yours](#8-make-it-yours)
+9. [Plugins](#9-plugins)
+10. [Keyboard shortcuts](#10-keyboard-shortcuts)
+11. [Troubleshooting](#11-troubleshooting)
 
 ## 1. Install
 
@@ -126,7 +128,7 @@ of Spotify** forgets it.
 - The queue button in the player bar (or `Ctrl+B`) shows what's playing and what's next. Click a
   song there to jump to it, or the **×** next to it to remove it. **Clear** empties the queue.
 - The player bar has shuffle, previous, play/pause, next, repeat (off, all, one), the seek bar and
-  volume. On the right are buttons for lyrics, the DJ and the queue.
+  volume. On the right are buttons for Now Playing, lyrics, the DJ and the queue.
 
 ## 5. Set up the DJ
 
@@ -233,7 +235,35 @@ Each set is one request to your AI provider plus a few Spotify searches. With a 
 a fraction of a cent; larger models cost more, so check your provider's pricing. Local models
 through Ollama or LM Studio are free.
 
-## 6. Lyrics
+## 6. Now Playing
+
+Click the cover in the player bar, **Now Playing** in the sidebar, or press `Ctrl+P` for a big
+player: the cover cut into a wavy "cookie" shape inside a ring of bars that move with the music,
+the song's name, a wavy seek bar showing the time left, large controls and the volume. The lyrics
+sit beside it, with the line being sung on a soft card. `Esc` or the **×** at the top right goes
+back. The buttons next to the **×** hide the lyrics, open the player settings and go full screen.
+
+Everything about it can be changed in **Settings → Player**, and changes show straight away:
+
+- **Ready-made looks:** Halo (the default), Vinyl (a round, spinning cover), Minimal, Studio and
+  Bloom (a flower shape with rainbow bars). Pick one, then change whatever you like.
+- **Page:** player and lyrics side by side, the player alone, or a small player above the lyrics;
+  which side the lyrics go on; the card behind the current line; a blurred cover, a soft glow or
+  the plain theme behind it; whether the sidebar and queue stay visible; text alignment and size.
+- **Cover:** cookie, circle, flower, squircle, rounded or square; its size; how many bumps the wavy
+  edge has and how deep they go; spinning slowly like a record.
+- **Visualizer:** a ring of bars, a ring-shaped wave, bars or a wave under the cover, or off. Its
+  colour (accent, from the cover, rainbow, text or your own), the number of bars, their thickness,
+  how far they reach, how strongly and how smoothly they react, mirrored sides, a glow, and how
+  many times a second it redraws (lower uses less CPU).
+- **Controls:** the play button's shape and size and whether it turns while playing, the size of
+  the other buttons, the seek bar style (wave, thin line, thick bar, dots or hidden), and whether
+  to show the times, volume, shuffle and repeat, the album name, and buttons for the queue, DJ
+  and lyrics.
+
+The visualizer reads the sound Haze plays itself, so it only moves for music playing in Haze.
+
+## 7. Lyrics
 
 Click the microphone in the player bar, **Lyrics** in the sidebar, or press `Ctrl+L`. Do it again to
 go back to where you were.
@@ -257,9 +287,9 @@ as you hear them. If a song still runs early or late, use **Timing offset**.
 **Settings → Lyrics** also has: word-by-word highlight, the blurred cover background, left or
 centred lines, the lyrics font and size, and how many past lines stay on screen.
 
-## 7. Make it yours
+## 8. Make it yours
 
-**Settings → Appearance** and **Layout** cover the common options and apply them straight away;
+**Settings → Appearance**, **Theme maker**, **Player** and **Layout** cover the common options and apply them straight away;
 click **Save settings** to keep them. Everything else is in the config file, whose path is shown at
 the top of Settings:
 
@@ -285,15 +315,31 @@ accent = "#1db954"          # override any theme colour
 sidebar = "right"
 player_bar = "top"
 track_columns = ["title", "artist", "duration"]
+
+[player]
+cover_shape = "flower"      # cookie, circle, flower, squircle, rounded, square
+visualizer = "ring_wave"    # ring, ring_wave, bars, wave, off
 ```
 
 The app font, text size and window size apply after a restart. Close Haze before editing the
 file, because saving in Settings writes over it.
 
-### Your own theme
+### Themes and the theme maker
 
-**Settings → Appearance → Open folder** opens Haze's config folder. Add a `themes` folder there
-(Haze makes it the first time you click the button) with a file such as `themes/ocean.toml`:
+**Settings → Theme maker** shows every theme as a small preview; click one to use it. Below that
+you can make your own:
+
+1. Click a colour (background, panels, text, quiet text, accent, warnings) and either type a hex
+   code or move the hue, saturation and lightness sliders. The whole app changes as you go, and
+   the mock-up next to the colours shows the result.
+2. **Surprise me** makes a random palette, **From this song's cover** builds one from the cover
+   art, and **Undo my changes** goes back to the theme you started from.
+3. Give it a name and click **Save theme**. It joins the list, and the bin icon on its preview
+   deletes it.
+
+**Copy to share** puts the theme on the clipboard as text, so you can paste it to a friend; they
+use **Paste a theme**. **Import file…** (or dragging a `.toml` onto the window) adds a theme file.
+Themes are plain files in the `themes` folder (**Themes folder** opens it), like this:
 
 ```toml
 base = "apple-music-dark"   # the built-in theme to start from
@@ -303,10 +349,22 @@ accent = "#0a84ff"
 # also: text, muted_text, danger
 ```
 
-It then shows up in the **Theme** list as `ocean`. Turn on **Accent from cover art** to have the
-accent colour follow whatever is playing. **Cover glow background** (on by default) puts a blurred,
-darkened copy of the current song's cover behind the whole window, so its colours show around and
-through the panels.
+Turn on **Accent from cover art** in **Settings → Appearance** to have the accent colour follow
+whatever is playing. **Cover glow background** (on by default) puts a blurred, darkened copy of
+the current song's cover behind the whole window, so its colours show around and through the
+panels.
+
+### Layouts
+
+**Settings → Layout** starts with a picture of the window. Its buttons move the sidebar and the
+queue to the other side or hide them, and move the player bar to the top or bottom. The sliders
+change the sidebar and queue widths, the space between panels and the space around the page, and
+the song list columns can be switched on or off and moved up or down.
+
+Under **Layouts**, the built-in layouts (Classic, Minimal, Queue on the left, Player bar on top,
+Wide queue) and the ones you save switch everything in one click. **Save layout** keeps the current
+one under a name, and with **Include the player look** on it keeps your Now Playing settings too.
+Layouts can be copied, pasted and imported just like themes, and live in the `layouts` folder.
 
 ### Your own fonts
 
@@ -322,12 +380,16 @@ name under **…or an installed font**.
 **Settings → Appearance → App icon** has eight built-in icons to pick from (the setup offers them
 too), and **Use your own image…** takes PNG, JPEG, WebP, GIF, BMP, ICO, TIFF, TGA or QOI; square
 works best. Haze reads the file itself, so a WebP saved with a .png name still works. You can also
-drag an image onto the Haze window while Settings is open. The icon changes in the
-window, the taskbar and the logo in the sidebar straight away. On Linux, Haze also writes a menu
-entry (`~/.local/share/applications/haze.desktop`) so your launcher and dock use it too. On macOS this
-only changes the window icon: to change the Dock icon, select Haze.app in Finder, choose
-**Get Info**, and paste your image onto the small icon at the top. **Reset** brings back the
-built-in icon.
+drag an image onto the Haze window while Settings is open. **Reset** brings back the built-in icon.
+
+The icon changes straight away in the window, the taskbar and the logo in the sidebar, and also:
+
+- **Linux:** in your app menu and dock (Haze writes `~/.local/share/applications/haze.desktop`),
+  and on the Haze launcher on your desktop. **Put Haze on the desktop** makes that launcher if you
+  don't have one.
+- **Windows:** on the Haze shortcut on your desktop. **Put Haze on the desktop** makes one.
+- **macOS:** in the Dock while Haze runs, and on Haze.app in Finder (and so in the Dock when Haze
+  is closed).
 
 ### Updates
 
@@ -346,7 +408,49 @@ Open a playlist or Liked Songs and click **Change cover…** to use any image as
 an image onto the window while the playlist is open. This only changes it in Haze, not on Spotify.
 **Reset cover** brings Spotify's back.
 
-## 8. Keyboard shortcuts
+## 9. Plugins
+
+Plugins add themes, layouts and little programs that run when something happens in Haze, for
+example writing the current song to a file for OBS or showing a desktop notification. Install them
+in **Settings → Plugins**:
+
+- Type a GitHub repository (`owner/name`, or its full link) and click **Install**. The repository
+  has to be public. You can also give a link to a `.zip`, or a folder on your computer.
+- Or click **Install a .zip file…**, or drag a plugin's `.zip` onto the window.
+
+Each installed plugin can be switched on or off, opened in its folder, or removed with the bin.
+**A plugin that runs commands is switched off when it's installed**, and says which events it runs
+on; only switch it on if you trust whoever made it, because its commands run as you.
+
+### Making a plugin
+
+A plugin is a folder with a `plugin.toml`, and optionally `themes` and `layouts` folders holding
+theme and layout files (the same files **Save theme** and **Save layout** write):
+
+```toml
+name = "Now playing file"
+version = "1.0"
+author = "you"
+description = "Writes the current song to now-playing.txt"
+homepage = "https://github.com/you/haze-now-playing"
+
+[hooks]
+track = "echo \"$HAZE_TITLE - $HAZE_ARTIST\" > now-playing.txt"
+pause = "echo Paused > now-playing.txt"
+```
+
+Hooks run in the plugin's folder, with `sh` on Linux and macOS and `cmd` on Windows. The events
+are `start` (Haze starts), `track` (a new song starts), `play`, `pause` and `dj` (the DJ says
+something). Each command gets these environment variables: `HAZE_EVENT`, `HAZE_TITLE`,
+`HAZE_ARTIST`, `HAZE_ALBUM`, `HAZE_TRACK_ID`, `HAZE_TRACK_URI`, `HAZE_COVER` (the cover's web
+address), `HAZE_DURATION_MS`, `HAZE_PLAYING` (`1` or `0`) and `HAZE_DJ_TEXT`. On Linux, a
+notification is one line: `track = "notify-send \"$HAZE_TITLE\" \"$HAZE_ARTIST\""`. On Windows,
+write the variables as `%HAZE_TITLE%`.
+
+Zip the folder, or put it in a GitHub repository, to share it. Haze finds `plugin.toml` even when
+it's one folder down, as in GitHub's downloads.
+
+## 10. Keyboard shortcuts
 
 | Keys | Does |
 | --- | --- |
@@ -358,11 +462,16 @@ an image onto the window while the playlist is open. This only changes it in Haz
 | `Ctrl+B` | Show or hide the queue |
 | `Ctrl+D` | Start the DJ |
 | `Ctrl+L` | Lyrics |
-| `Esc` | Leave full screen |
+| `Ctrl+P` | Now Playing |
+| `F11` | Full screen |
+| `Esc` | Leave full screen or Now Playing |
 
-You can change any of them under `[keys]` in the config file.
+To change one, open **Settings → Shortcuts**, click its keys and press the new ones (`Esc`
+cancels). The **×** removes a shortcut, and **Reset all shortcuts** brings back the ones above. A
+key combination can only do one thing, so giving it to a new action takes it from the old one.
+Media keys always work. On macOS, `Ctrl` in a shortcut also means `Cmd`.
 
-## 9. Troubleshooting
+## 11. Troubleshooting
 
 | Problem | Fix |
 | --- | --- |
@@ -382,4 +491,7 @@ You can change any of them under `[keys]` in the config file.
 | `fatal: not a git repository` | Run `cd ~/haze` first, then try again. |
 | `can't find crate` while building on Arch | Build with `makepkg -Csi`, which starts fresh. |
 | The window is blank or flickers | Set `renderer = "cpu"` under `[appearance]` (the default). `"gpu"` needs a graphics driver that supports it. |
+| A plugin's command doesn't run | Check it's switched on in **Settings → Plugins** and that its events are among the ones listed under [Making a plugin](#making-a-plugin). Run Haze from a terminal to see the command's errors. |
+| A plugin from GitHub fails while downloading | The repository has to be public, and the name typed as `owner/name`. |
+| The visualizer doesn't move | It only moves while Haze is playing. Make sure **Visualizer** isn't **Off** in **Settings → Player**, and try raising **Sensitivity**. |
 | Something else | Run Haze from a terminal with `RUST_LOG=haze=debug` and include what it prints in an [issue](https://github.com/jeeplecreeple/haze/issues/new). |

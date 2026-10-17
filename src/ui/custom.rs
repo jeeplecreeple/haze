@@ -89,6 +89,14 @@ pub async fn pick_font() -> Result<Option<PathBuf>, String> {
     pick_file("Add a font", "Fonts", &["ttf", "otf", "ttc"]).await
 }
 
+pub async fn pick_toml(title: &str) -> Result<Option<PathBuf>, String> {
+    pick_file(title, "Haze files", &["toml"]).await
+}
+
+pub async fn pick_zip() -> Result<Option<PathBuf>, String> {
+    pick_file("Install a plugin", "Plugins", &["zip"]).await
+}
+
 pub async fn pick_voice() -> Result<Option<PathBuf>, String> {
     pick_file("Choose a Piper voice", "Piper voices", &["onnx"]).await
 }
@@ -157,7 +165,7 @@ pub fn sync_menu_entry(app_icon: &str) -> Result<()> {
     }
     let Some(path) = menu_entry_path() else { return Ok(()) };
     let name = app_icon.trim();
-    let icon = if name.is_empty() || name.eq_ignore_ascii_case("haze") {
+    let icon = if is_default_icon(name) {
         if installed_entry_exists() {
             // The package's entry already has the right icon; drop any custom one of ours.
             if std::fs::read_to_string(&path).is_ok_and(|s| s.contains(MENU_ENTRY_MARK)) {
@@ -171,32 +179,49 @@ pub fn sync_menu_entry(app_icon: &str) -> Result<()> {
             std::fs::write(&file, BUILTIN_ICON)?;
         }
         "haze".to_string()
-    } else if let Some(bytes) = builtin_icon(name) {
-        let file = config::data_dir("icons")?.join(format!("builtin-{}.png", name.to_ascii_lowercase()));
-        if !file.exists() {
-            std::fs::write(&file, bytes)?;
-        }
-        file.display().to_string()
     } else {
-        name.to_string()
+        icon_file(name)?.display().to_string()
     };
     let current = std::fs::read_to_string(&path);
     if current.as_ref().is_ok_and(|s| !s.contains(MENU_ENTRY_MARK)) {
         // You wrote your own entry; leave it alone.
         return Ok(());
     }
-    let exe = std::env::current_exe()?;
-    let entry = format!(
-        "{MENU_ENTRY_MARK}\n[Desktop Entry]\nType=Application\nName=Haze\n\
-         Comment=Lightweight Spotify client with an AI DJ\nExec=\"{}\"\nIcon={icon}\n\
-         Terminal=false\nCategories=Audio;Music;Player;AudioVideo;\nStartupWMClass=haze\n",
-        exe.display(),
-    );
+    let entry = format!("{MENU_ENTRY_MARK}\n{}", desktop_entry(&std::env::current_exe()?, &icon));
     if current.ok().as_deref() != Some(entry.as_str()) {
         std::fs::create_dir_all(path.parent().expect("has parent"))?;
         std::fs::write(&path, entry)?;
     }
     Ok(())
+}
+
+/// A Linux launcher for Haze with the given icon.
+pub fn desktop_entry(exe: &Path, icon: &str) -> String {
+    format!(
+        "[Desktop Entry]\nType=Application\nName=Haze\n\
+         Comment=Lightweight Spotify client with an AI DJ\nExec=\"{}\"\nIcon={icon}\n\
+         Terminal=false\nCategories=Audio;Music;Player;AudioVideo;\nStartupWMClass=haze\n",
+        exe.display(),
+    )
+}
+
+/// Whether `app_icon` is Haze's own icon.
+pub fn is_default_icon(app_icon: &str) -> bool {
+    let name = app_icon.trim();
+    name.is_empty() || name.eq_ignore_ascii_case("haze")
+}
+
+/// `app_icon` as an image file other programs can read: built-in icons are written out to the
+/// config folder once.
+pub fn icon_file(app_icon: &str) -> Result<PathBuf> {
+    let name = app_icon.trim();
+    let name = if name.is_empty() { "haze" } else { name };
+    let Some(bytes) = builtin_icon(name) else { return Ok(PathBuf::from(name)) };
+    let file = config::data_dir("icons")?.join(format!("builtin-{}.png", name.to_ascii_lowercase()));
+    if std::fs::read(&file).ok().as_deref() != Some(bytes) {
+        std::fs::write(&file, bytes)?;
+    }
+    Ok(file)
 }
 
 /// A custom-icon menu entry written under the app's old name points at the old program, so it is
@@ -312,6 +337,15 @@ pub fn blurred_cover(bytes: &[u8], toward: Color, keep: f32) -> Option<image::Ha
     }
     let (w, h) = img.dimensions();
     Some(image::Handle::from_rgba(w, h, img.into_raw()))
+}
+
+/// The cover cut to the Now Playing outline, see-through outside it.
+pub fn shaped_cover(bytes: &[u8], outline: super::shape::Outline) -> Option<image::Handle> {
+    let img = ::image::load_from_memory(bytes).ok()?;
+    let img = if img.width().min(img.height()) > 600 { img.thumbnail(600, 600) } else { img }.to_rgba8();
+    let cut = outline.mask(&img);
+    let (w, h) = cut.dimensions();
+    Some(image::Handle::from_rgba(w, h, cut.into_raw()))
 }
 
 /// Opens a web page in the browser.

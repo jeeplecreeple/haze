@@ -4,7 +4,7 @@
 #   makepkg -Csi
 # Maintainer: Haz
 pkgname=haze
-pkgver=0.4.3
+pkgver=0.5.0
 pkgrel=1
 pkgdesc="Native, lightweight, customisable Spotify client with an AI DJ"
 arch=('x86_64' 'aarch64')

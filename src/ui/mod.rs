@@ -1,10 +1,14 @@
 //! Application state and update loop.
 
 mod custom;
+mod desktop_icon;
 mod icon;
 mod keys;
+mod shape;
 mod style;
 mod view;
+
+pub use style::hsl;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -28,6 +32,18 @@ use crate::update;
 /// Player events flow from librespot's thread into the UI through this channel.
 static PLAYER_TX: OnceLock<UnboundedSender<PlayerUpdate>> = OnceLock::new();
 static PLAYER_RX: Mutex<Option<UnboundedReceiver<PlayerUpdate>>> = Mutex::new(None);
+
+/// Brings the desktop shortcut (or Haze.app) in line with `icon`, off the UI thread.
+fn sync_desktop_icon(icon: String, create: bool) -> Task<Message> {
+    Task::perform(
+        async move {
+            tokio::task::spawn_blocking(move || desktop_icon::sync(&icon, create).map_err(|e| format!("{e:#}")))
+                .await
+                .unwrap_or_else(|e| Err(e.to_string()))
+        },
+        move |r| Message::DesktopIconSynced(create, r),
+    )
+}
 
 /// Keep at most this many cover images decoded in memory.
 const IMAGE_CACHE: usize = 32;
@@ -86,6 +102,8 @@ pub enum Page {
     Liked,
     Playlist(Playlist),
     Lyrics,
+    /// The big Now Playing view.
+    Player,
     Settings,
 }
 
@@ -110,20 +128,29 @@ pub enum UpdateStatus {
 pub enum SettingsTab {
     Dj,
     Look,
+    Themes,
+    Player,
     Lyrics,
     Layout,
+    Plugins,
+    Keys,
     Updates,
 }
 
 impl SettingsTab {
-    pub const ALL: [SettingsTab; 5] = [Self::Dj, Self::Look, Self::Lyrics, Self::Layout, Self::Updates];
+    pub const ALL: [SettingsTab; 9] =
+        [Self::Dj, Self::Look, Self::Themes, Self::Player, Self::Lyrics, Self::Layout, Self::Keys, Self::Plugins, Self::Updates];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Dj => "DJ",
             Self::Look => "Appearance",
+            Self::Themes => "Theme maker",
+            Self::Player => "Player",
             Self::Lyrics => "Lyrics",
             Self::Layout => "Layout",
+            Self::Plugins => "Plugins",
+            Self::Keys => "Shortcuts",
             Self::Updates => "Updates",
         }
     }
@@ -132,8 +159,12 @@ impl SettingsTab {
         match self {
             Self::Dj => icon::SPARKLES,
             Self::Look => icon::PALETTE,
+            Self::Themes => icon::PAINTBRUSH,
+            Self::Player => icon::DISC_3,
             Self::Lyrics => icon::MIC_VOCAL,
-            Self::Layout => icon::SLIDERS_HORIZONTAL,
+            Self::Layout => icon::LAYOUT_TEMPLATE,
+            Self::Plugins => icon::PUZZLE,
+            Self::Keys => icon::KEYBOARD,
             Self::Updates => icon::ROTATE_CCW,
         }
     }
@@ -256,6 +287,56 @@ pub enum Message {
     ClearQueue,
     Image(String, Result<Vec<u8>, String>),
 
+    // Now Playing
+    TogglePlayer,
+    TogglePlayerLyrics,
+    OpenSettingsTab(SettingsTab),
+
+    // Theme maker
+    ThemeSlot(usize),
+    ThemeColor(usize, String),
+    ThemeName(String),
+    SaveTheme,
+    CopyTheme,
+    PasteTheme,
+    ThemePasted(Option<String>),
+    ImportTheme,
+    ThemeFilePicked(Option<PathBuf>),
+    DeleteTheme(String),
+    ThemeSurprise,
+    ThemeFromCover,
+    ThemeReset,
+    OpenDataFolder(&'static str),
+    OpenPath(PathBuf),
+
+    // Saved layouts
+    ApplyLayout(String),
+    LayoutName(String),
+    LayoutWithPlayer(bool),
+    SaveLayout,
+    CopyLayout,
+    PasteLayout,
+    LayoutPasted(Option<String>),
+    ImportLayout,
+    LayoutFilePicked(Option<PathBuf>),
+    DeleteLayout(String),
+
+    // Shortcuts
+    RecordKey(usize),
+    StopRecordingKey,
+    ClearKey(usize),
+    ResetKeys,
+
+    // Plugins
+    PluginInput(String),
+    InstallPlugin,
+    PickPlugin,
+    PluginFilePicked(Option<PathBuf>),
+    PluginInstalled(Result<crate::plugins::Plugin, String>),
+    TogglePlugin(String, bool),
+    UninstallPlugin(String),
+    ReloadPlugins,
+
     // Lyrics
     ToggleLyrics,
     ToggleFullscreen,
@@ -273,6 +354,10 @@ pub enum Message {
     // Settings
     Edit(Edit),
     PickIcon,
+    /// Put a Haze shortcut on the desktop, with the chosen icon.
+    AddDesktopShortcut,
+    DesktopIconSynced(bool, Result<desktop_icon::Outcome, String>),
+    SyncDockIcon,
     IconPicked(Option<PathBuf>),
     /// No file picker could be opened.
     PickFailed(String),
@@ -317,9 +402,6 @@ pub enum Edit {
     LyricsSize(f32),
     LyricsOffset(f32),
     LinesBefore(f32),
-    Sidebar(crate::config::Side),
-    SidePanel(crate::config::Side),
-    PlayerBar(crate::config::Edge),
     Provider(crate::config::LlmProvider),
     Model(String),
     BaseUrl(String),
@@ -341,6 +423,8 @@ pub enum Edit {
     TtsModel(String),
     DuckTo(f32),
     CheckUpdates(bool),
+    PlayerStyle(Box<crate::config::PlayerStyle>),
+    LayoutStyle(Box<crate::config::Layout>),
 }
 
 #[derive(Debug, Clone)]
@@ -410,6 +494,34 @@ pub struct App {
     no_system_voice: bool,
     /// The default Piper voice was downloaded this run.
     piper_voice_ready: bool,
+
+    /// Visualizer levels, smoothed from frame to frame.
+    pub viz: Vec<f32>,
+    /// How far the cover and the play button have turned, in radians.
+    pub spin: f32,
+    pub play_turn: f32,
+    last_tick: Instant,
+    /// The cover cut to the player's shape, and what it was made from.
+    pub player_cover: Option<(String, image::Handle)>,
+    /// Lyrics beside the Now Playing player (the mic button there turns them off).
+    pub player_lyrics: bool,
+
+    /// The colour being tuned in the theme maker, and what's typed in its boxes.
+    pub theme_slot: usize,
+    pub theme_name_input: String,
+    pub hex_drafts: HashMap<&'static str, String>,
+    pub layout_names: Vec<String>,
+    pub layout_name_input: String,
+    pub layout_with_player: bool,
+    pub plugins: Vec<crate::plugins::Plugin>,
+    pub plugin_input: String,
+    pub plugin_busy: bool,
+    /// The song the plugins last heard about, so "track" fires once per song.
+    hooked_track: Option<String>,
+    /// Sample data instead of Spotify (`HAZE_DEMO`); the visualizer makes up its own music.
+    demo: bool,
+    /// The shortcut waiting for you to press its new keys.
+    pub recording_key: Option<usize>,
 }
 
 fn err(e: anyhow::Error) -> String {
@@ -470,9 +582,29 @@ impl App {
             resume_after_speech: false,
             no_system_voice: false,
             piper_voice_ready: false,
+            viz: Vec::new(),
+            spin: 0.0,
+            play_turn: 0.0,
+            last_tick: Instant::now(),
+            player_cover: None,
+            player_lyrics: true,
+            theme_slot: 4,
+            theme_name_input: String::new(),
+            hex_drafts: HashMap::new(),
+            layout_names: Vec::new(),
+            layout_name_input: String::new(),
+            layout_with_player: true,
+            plugins: Vec::new(),
+            plugin_input: String::new(),
+            plugin_busy: false,
+            hooked_track: None,
+            demo: false,
+            recording_key: None,
             config,
         };
         let mut app = app;
+        app.reload_plugins();
+        crate::plugins::run_hooks(&app.config.plugins.enabled, "start", &[]);
         app.refresh_theme_names();
         let demo = std::env::var("HAZE_DEMO").ok();
         // HAZE_DEMO=setup (or setup-look, setup-spotify, setup-dj, setup-login, setup-done) shows the setup.
@@ -500,7 +632,11 @@ impl App {
         // its login step, so the browser doesn't open over the welcome screen.
         let login = if has_client && app.setup.is_none() && Auth::has_cached_login() { Task::done(Message::Login) } else { Task::none() };
         let check = if app.config.updates.check { Task::done(Message::CheckForUpdates(false)) } else { Task::none() };
-        (app, Task::batch([login, check]))
+        let icon = app.config.appearance.app_icon.clone();
+        // Keeps a desktop launcher in step with an icon chosen before Haze could do that. The
+        // Windows shortcut and Haze.app are only changed when you pick an icon.
+        let desktop = if cfg!(target_os = "linux") { sync_desktop_icon(icon, false) } else { Task::none() };
+        (app, Task::batch([login, check, desktop, Task::done(Message::SyncDockIcon)]))
     }
 
     fn title(&self) -> String {
@@ -535,6 +671,10 @@ impl App {
         // Redraw at 30 fps for the smooth scroll and word fill, only while synced lyrics are on screen.
         if self.page == Page::Lyrics && self.playing && self.lyrics.as_ref().is_some_and(|l| l.synced) {
             subs.push(iced::time::every(Duration::from_millis(33)).map(|_| Message::Tick));
+        } else if self.page == Page::Player && (self.playing || self.viz.iter().any(|&l| l > 0.01)) {
+            // The visualizer, the turning cover and the wave in the seek bar.
+            let fps = self.config.player.fps.clamp(10, 120) as u64;
+            subs.push(iced::time::every(Duration::from_millis(1000 / fps)).map(|_| Message::Tick));
         }
         Subscription::batch(subs)
     }
@@ -555,6 +695,92 @@ impl App {
 
     fn refresh_theme_names(&mut self) {
         self.theme_names = theme::PRESETS.iter().map(|s| s.to_string()).chain(theme::custom_themes()).collect();
+        self.layout_names = crate::layouts::saved();
+    }
+
+    /// Re-reads the plugins folder and points theme and layout lookups at the plugins that are on.
+    fn reload_plugins(&mut self) {
+        self.plugins = crate::plugins::list();
+        let installed: Vec<&str> = self.plugins.iter().map(|p| p.id.as_str()).collect();
+        self.config.plugins.enabled.retain(|id| installed.contains(&id.as_str()));
+        let enabled = &self.config.plugins.enabled;
+        theme::set_plugin_dirs(crate::plugins::content_dirs(enabled, "themes"));
+        crate::layouts::set_plugin_dirs(crate::plugins::content_dirs(enabled, "layouts"));
+        self.refresh_theme_names();
+        self.refresh_theme();
+    }
+
+    /// Tells the plugins that are on about `event`, with the current song.
+    fn hook(&self, event: &str, extra: &[(&str, String)]) {
+        if self.config.plugins.enabled.is_empty() {
+            return;
+        }
+        let mut vars: Vec<(&str, String)> = match self.queue.current() {
+            Some(e) => vec![
+                ("HAZE_TITLE", e.track.name.clone()),
+                ("HAZE_ARTIST", e.track.artist_line()),
+                ("HAZE_ALBUM", e.track.album.clone()),
+                ("HAZE_TRACK_ID", e.track.id.clone()),
+                ("HAZE_TRACK_URI", e.track.uri.clone()),
+                ("HAZE_COVER", e.track.image_url.clone().unwrap_or_default()),
+                ("HAZE_DURATION_MS", e.track.duration_ms.to_string()),
+            ],
+            None => Vec::new(),
+        };
+        vars.push(("HAZE_PLAYING", if self.playing { "1" } else { "0" }.to_string()));
+        vars.extend(extra.iter().cloned());
+        crate::plugins::run_hooks(&self.config.plugins.enabled, event, &vars);
+    }
+
+    fn import_theme_text(&mut self, text: &str, fallback: &str) {
+        match theme::import_theme(text, fallback) {
+            Ok(slug) => {
+                self.config.appearance.theme = slug.clone();
+                self.config.appearance.colors = Default::default();
+                self.refresh_theme_names();
+                self.refresh_theme();
+                self.notify(format!("Added the theme \"{slug}\" and switched to it."), false);
+            }
+            Err(e) => self.notify(e.to_string(), true),
+        }
+    }
+
+    fn import_layout_text(&mut self, text: &str, fallback: &str) {
+        match crate::layouts::import(text, fallback) {
+            Ok(name) => {
+                self.refresh_theme_names();
+                let _ = self.update(Message::ApplyLayout(name.clone()));
+                self.notify(format!("Added the layout \"{name}\" and switched to it."), false);
+            }
+            Err(e) => self.notify(e.to_string(), true),
+        }
+    }
+
+    fn install_plugin(&mut self, source: crate::plugins::Source) -> Task<Message> {
+        self.plugin_busy = true;
+        Task::perform(async move { crate::plugins::install(source).await.map_err(err) }, Message::PluginInstalled)
+    }
+
+    /// The theme maker's colours, written as overrides on the current theme.
+    fn set_theme_color(&mut self, slot: usize, hex: String) {
+        let o = &mut self.config.appearance.colors;
+        let target = match slot {
+            0 => &mut o.background,
+            1 => &mut o.surface,
+            2 => &mut o.text,
+            3 => &mut o.muted_text,
+            4 => &mut o.accent,
+            _ => &mut o.danger,
+        };
+        *target = hex;
+    }
+
+    fn set_all_theme_colors(&mut self, colors: &Colors) {
+        for i in 0..6 {
+            self.set_theme_color(i, theme::to_hex(view::theme_slot_color(colors, i)));
+        }
+        self.hex_drafts.clear();
+        self.refresh_theme();
     }
 
     /// Recomputes the blurred lyrics background and the cover accent when the song's cover changes.
@@ -575,7 +801,67 @@ impl App {
         self.lyrics_background = bytes.as_ref().and_then(|b| custom::blurred_cover(b, base.background, 0.5));
         self.ambient = bytes.as_ref().and_then(|b| custom::blurred_cover(b, base.background, 0.55));
         self.cover_accent = bytes.as_ref().and_then(|b| theme::accent_from_image(b));
+        self.update_player_cover();
         self.refresh_theme();
+    }
+
+    /// Cuts the current cover to the player's shape, unless it already is.
+    fn update_player_cover(&mut self) {
+        let Some(url) = self.queue.current().and_then(|e| e.track.image_url.clone()) else {
+            self.player_cover = None;
+            return;
+        };
+        let outline = self.cover_outline();
+        let key = format!("{url}|{outline:?}");
+        if self.player_cover.as_ref().is_some_and(|(k, _)| *k == key) {
+            return;
+        }
+        let Some(image::Handle::Bytes(_, bytes)) = self.images.get(&url) else { return };
+        self.player_cover = custom::shaped_cover(bytes, outline).map(|h| (key, h));
+    }
+
+    /// One frame of the Now Playing page: the visualizer levels and the turning cover.
+    fn tick_player(&mut self) {
+        let dt = self.last_tick.elapsed().as_secs_f32().min(0.2);
+        self.last_tick = Instant::now();
+        if self.page != Page::Player {
+            return;
+        }
+        let p = &self.config.player;
+        if self.playing {
+            if p.spin {
+                self.spin = (self.spin + dt * p.spin_speed / 60.0 * std::f32::consts::TAU) % std::f32::consts::TAU;
+            }
+            if p.play_spin {
+                self.play_turn = (self.play_turn + dt * 0.35) % std::f32::consts::TAU;
+            }
+        }
+        let bands = self.visualizer_bands();
+        let target = if self.demo && self.playing {
+            let t = self.position_at.elapsed().as_secs_f32();
+            (0..bands)
+                .map(|b| {
+                    let x = b as f32 / bands as f32;
+                    let beat = (t * 4.2).sin().max(0.0).powi(3) * (1.0 - x);
+                    (0.25 + 0.35 * (t * 2.3 + x * 9.0).sin().abs() * (1.0 - 0.5 * x) + 0.4 * beat).min(1.0)
+                })
+                .collect()
+        } else if self.playing && p.visualizer != crate::config::Visualizer::Off {
+            crate::visualizer::spectrum(bands, crate::player::OUTPUT_DELAY_MS)
+        } else {
+            vec![0.0; bands]
+        };
+        if self.viz.len() != bands {
+            self.viz = vec![0.0; bands];
+        }
+        let gain = p.visualizer_sensitivity / 100.0;
+        // Smoothing is per frame at 30 fps; scale it so the feel doesn't change with the frame rate.
+        let keep = (p.visualizer_smoothing / 100.0).clamp(0.0, 0.95).powf(dt * 30.0);
+        for (level, t) in self.viz.iter_mut().zip(target) {
+            let t = (t * gain).min(1.0);
+            // Rise quickly, fall slowly, like a VU meter.
+            *level = if t > *level { t * 0.7 + *level * 0.3 } else { *level * keep + t * (1.0 - keep) };
+        }
     }
 
     fn set_fullscreen(&mut self, on: bool) -> Task<Message> {
@@ -640,8 +926,20 @@ impl App {
         if ["ttf", "otf", "ttc"].contains(&ext.as_str()) {
             return Task::done(Message::FontPicked(Some(path)));
         }
+        if ext == "zip" || (path.is_dir() && path.join("plugin.toml").is_file()) {
+            return self.install_plugin(crate::plugins::Source::Local(path));
+        }
+        if ext == "toml" {
+            // A layout file has a [layout] table; anything else is taken as a theme.
+            let text = std::fs::read_to_string(&path).unwrap_or_default();
+            let is_layout = toml::from_str::<toml::Table>(&text).is_ok_and(|t| t.contains_key("layout"));
+            return Task::done(if is_layout { Message::LayoutFilePicked(Some(path)) } else { Message::ThemeFilePicked(Some(path)) });
+        }
         if !custom::IMAGE_TYPES.contains(&ext.as_str()) {
-            self.notify("Haze can use PNG, JPEG, WebP, GIF, BMP, ICO, TIFF, TGA and QOI images, and TTF or OTF fonts.", true);
+            self.notify(
+                "Haze can use images, TTF or OTF fonts, theme and layout files (.toml) and plugins (.zip).",
+                true,
+            );
             return Task::none();
         }
         match &self.page {
@@ -664,10 +962,13 @@ impl App {
         window::latest().and_then(move |id| window::set_icon(id, icon.clone()))
     }
 
-    fn sync_menu_entry(&mut self) {
+    /// After the icon changes: the app menu entry, the Dock, and the desktop shortcut.
+    fn sync_menu_entry(&mut self) -> Task<Message> {
         if let Err(e) = custom::sync_menu_entry(&self.config.appearance.app_icon) {
             log::warn!("app menu entry: {e:#}");
         }
+        desktop_icon::set_dock_icon(&self.config.appearance.app_icon);
+        sync_desktop_icon(self.config.appearance.app_icon.clone(), false)
     }
 
     fn save_quietly(&mut self) {
@@ -752,12 +1053,18 @@ impl App {
     }
 
     fn load_page(&mut self, page: Page) -> Task<Message> {
-        let leave_fullscreen = if page == Page::Lyrics { Task::none() } else { self.set_fullscreen(false) };
-        if page == Page::Lyrics && self.page != Page::Lyrics {
+        let big = matches!(page, Page::Lyrics | Page::Player);
+        let leave_fullscreen = if big { Task::none() } else { self.set_fullscreen(false) };
+        if big && !matches!(self.page, Page::Lyrics | Page::Player) {
             self.previous_page = self.page.clone();
         }
         let extra = match &page {
             Page::Lyrics => self.fetch_lyrics(),
+            Page::Player => {
+                self.last_tick = Instant::now();
+                self.update_player_cover();
+                self.fetch_lyrics()
+            }
             Page::Playlist(p) => self.fetch_image(p.image_url.as_ref()),
             Page::Settings => {
                 self.refresh_theme_names();
@@ -816,7 +1123,7 @@ impl App {
                 self.tracks.clear();
                 None
             }
-            Page::Dj | Page::Settings | Page::Lyrics => None,
+            Page::Dj | Page::Settings | Page::Lyrics | Page::Player => None,
         };
         match fetch {
             Some(task) => {
@@ -865,6 +1172,9 @@ impl App {
         );
 
         let mut tasks = vec![load, self.fetch_image(entry.track.image_url.as_ref()), lyrics, self.maybe_refill()];
+        if let Some(text) = &intro {
+            self.hook("dj", &[("HAZE_DJ_TEXT", text.clone())]);
+        }
         if let Some(text) = intro {
             tasks.push(self.speak(text, start_playing));
         }
@@ -1164,6 +1474,219 @@ impl App {
                 }
                 return self.load_page(Page::Lyrics);
             }
+            Message::TogglePlayer => {
+                if self.page == Page::Player {
+                    self.page = self.previous_page.clone();
+                    return self.set_fullscreen(false);
+                }
+                return self.load_page(Page::Player);
+            }
+            Message::TogglePlayerLyrics => self.player_lyrics = !self.player_lyrics,
+
+            Message::ThemeSlot(i) => self.theme_slot = i.min(5),
+            Message::ThemeColor(i, hex) => {
+                let key = view::THEME_SLOTS[i.min(5)].0;
+                if let Some(c) = theme::parse_hex(&hex) {
+                    self.set_theme_color(i, theme::to_hex(c));
+                    self.refresh_theme();
+                }
+                self.theme_slot = i.min(5);
+                self.hex_drafts.insert(key, hex);
+            }
+            Message::ThemeName(s) => self.theme_name_input = s,
+            Message::SaveTheme => {
+                let name = if self.theme_name_input.trim().is_empty() { "My theme".to_string() } else { self.theme_name_input.trim().to_string() };
+                let colors = theme::resolve(&self.config.appearance);
+                match theme::save_theme(&name, &colors) {
+                    Ok(slug) => {
+                        self.config.appearance.theme = slug;
+                        self.config.appearance.colors = Default::default();
+                        self.hex_drafts.clear();
+                        self.refresh_theme_names();
+                        self.refresh_theme();
+                        self.notify(format!("Saved the theme \"{name}\". Click Save settings to keep using it."), false);
+                    }
+                    Err(e) => self.notify(format!("Couldn't save the theme: {e}"), true),
+                }
+            }
+            Message::CopyTheme => {
+                let name = if self.theme_name_input.trim().is_empty() { self.config.appearance.theme.clone() } else { self.theme_name_input.trim().to_string() };
+                self.notify("Copied the theme. Paste it to a friend; they click Paste a theme in Haze.", false);
+                return iced::clipboard::write(theme::theme_toml(&name, &theme::resolve(&self.config.appearance)));
+            }
+            Message::PasteTheme => return iced::clipboard::read().map(Message::ThemePasted),
+            Message::ThemePasted(None) => self.notify("There's nothing to paste.", true),
+            Message::ThemePasted(Some(text)) => self.import_theme_text(&text, "Pasted theme"),
+            Message::ImportTheme => {
+                return Task::perform(custom::pick_toml("Import a theme"), |r| match r {
+                    Ok(path) => Message::ThemeFilePicked(path),
+                    Err(e) => Message::PickFailed(e),
+                });
+            }
+            Message::ThemeFilePicked(None) | Message::LayoutFilePicked(None) | Message::PluginFilePicked(None) => {}
+            Message::ThemeFilePicked(Some(path)) => match std::fs::read_to_string(&path) {
+                Ok(text) => {
+                    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Imported theme").to_string();
+                    self.import_theme_text(&text, &stem);
+                }
+                Err(e) => self.notify(format!("Couldn't read that file: {e}"), true),
+            },
+            Message::DeleteTheme(name) => match theme::delete_theme(&name) {
+                Ok(()) => {
+                    if self.config.appearance.theme == name {
+                        self.config.appearance.theme = "haze".into();
+                    }
+                    self.refresh_theme_names();
+                    self.refresh_theme();
+                }
+                Err(e) => self.notify(e.to_string(), true),
+            },
+            Message::ThemeSurprise => {
+                let hue = rand::random::<f32>() * 360.0;
+                let (r, g, b) = style::hsl(hue, 0.65 + rand::random::<f32>() * 0.3, 0.6 + rand::random::<f32>() * 0.1);
+                let dark = theme::rgb_to_hsl(self.colors.background).2 < 0.5;
+                let colors = theme::palette_from(Color::from_rgb(r, g, b), dark);
+                self.set_all_theme_colors(&colors);
+            }
+            Message::ThemeFromCover => match self.cover_accent {
+                Some(accent) => {
+                    let dark = theme::rgb_to_hsl(self.colors.background).2 < 0.5;
+                    self.set_all_theme_colors(&theme::palette_from(accent, dark));
+                }
+                None => self.notify("Play a song with a colourful cover first.", false),
+            },
+            Message::ThemeReset => {
+                self.config.appearance.colors = Default::default();
+                self.hex_drafts.clear();
+                self.refresh_theme();
+            }
+            Message::OpenDataFolder(name) => {
+                if let Ok(dir) = crate::config::data_dir(name) {
+                    custom::open_folder(&dir);
+                }
+            }
+            Message::OpenPath(path) => custom::open_folder(&path),
+
+            Message::ApplyLayout(name) => {
+                if let Some(layout) = crate::layouts::built_in(&name) {
+                    self.config.layout = layout;
+                } else {
+                    match crate::layouts::load(&name) {
+                        Ok(file) => {
+                            self.config.layout = file.layout;
+                            if let Some(player) = file.player {
+                                self.config.player = player;
+                                self.update_player_cover();
+                            }
+                        }
+                        Err(e) => self.notify(format!("Couldn't open that layout: {e}"), true),
+                    }
+                }
+                self.show_side_panel = self.config.layout.show_side_panel;
+            }
+            Message::LayoutName(s) => self.layout_name_input = s,
+            Message::LayoutWithPlayer(v) => self.layout_with_player = v,
+            Message::SaveLayout => {
+                let name = if self.layout_name_input.trim().is_empty() { "My layout".to_string() } else { self.layout_name_input.trim().to_string() };
+                let mut layout = self.config.layout.clone();
+                layout.show_side_panel = self.show_side_panel;
+                let player = self.layout_with_player.then_some(&self.config.player);
+                match crate::layouts::save(&name, &layout, player) {
+                    Ok(_) => {
+                        self.refresh_theme_names();
+                        self.notify(format!("Saved the layout \"{name}\"."), false);
+                    }
+                    Err(e) => self.notify(format!("Couldn't save the layout: {e}"), true),
+                }
+            }
+            Message::CopyLayout => {
+                let file = crate::layouts::LayoutFile {
+                    name: if self.layout_name_input.trim().is_empty() { "Shared layout".into() } else { self.layout_name_input.trim().into() },
+                    layout: self.config.layout.clone(),
+                    player: self.layout_with_player.then(|| self.config.player.clone()),
+                };
+                self.notify("Copied the layout. Whoever gets it clicks Paste a layout in Haze.", false);
+                return iced::clipboard::write(toml::to_string_pretty(&file).unwrap_or_default());
+            }
+            Message::PasteLayout => return iced::clipboard::read().map(Message::LayoutPasted),
+            Message::LayoutPasted(None) => self.notify("There's nothing to paste.", true),
+            Message::LayoutPasted(Some(text)) => self.import_layout_text(&text, "Pasted layout"),
+            Message::ImportLayout => {
+                return Task::perform(custom::pick_toml("Import a layout"), |r| match r {
+                    Ok(path) => Message::LayoutFilePicked(path),
+                    Err(e) => Message::PickFailed(e),
+                });
+            }
+            Message::LayoutFilePicked(Some(path)) => match std::fs::read_to_string(&path) {
+                Ok(text) => {
+                    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Imported layout").to_string();
+                    self.import_layout_text(&text, &stem);
+                }
+                Err(e) => self.notify(format!("Couldn't read that file: {e}"), true),
+            },
+            Message::DeleteLayout(name) => match crate::layouts::delete(&name) {
+                Ok(()) => self.refresh_theme_names(),
+                Err(e) => self.notify(e.to_string(), true),
+            },
+
+            Message::RecordKey(i) => self.recording_key = Some(i),
+            Message::StopRecordingKey => self.recording_key = None,
+            Message::ClearKey(i) => self.config.keys.set(i, String::new()),
+            Message::ResetKeys => {
+                self.config.keys = Default::default();
+                self.recording_key = None;
+            }
+            Message::PluginInput(s) => self.plugin_input = s,
+            Message::InstallPlugin => match crate::plugins::Source::parse(&self.plugin_input) {
+                Ok(source) => return self.install_plugin(source),
+                Err(e) => self.notify(e.to_string(), true),
+            },
+            Message::PickPlugin => {
+                return Task::perform(custom::pick_zip(), |r| match r {
+                    Ok(path) => Message::PluginFilePicked(path),
+                    Err(e) => Message::PickFailed(e),
+                });
+            }
+            Message::PluginFilePicked(Some(path)) => return self.install_plugin(crate::plugins::Source::Local(path)),
+            Message::PluginInstalled(result) => {
+                self.plugin_busy = false;
+                match result {
+                    Ok(plugin) => {
+                        // Plugins that run commands wait for you to switch them on.
+                        let on = !plugin.runs_commands();
+                        if on && !self.config.plugins.enabled.contains(&plugin.id) {
+                            self.config.plugins.enabled.push(plugin.id.clone());
+                        }
+                        self.plugin_input.clear();
+                        self.reload_plugins();
+                        let _ = self.config.save();
+                        let what = if on { "It's on." } else { "It runs programs, so it's off until you switch it on." };
+                        self.notify(format!("Installed {}. {what}", plugin.name()), false);
+                    }
+                    Err(e) => self.notify(format!("Couldn't install the plugin: {e}"), true),
+                }
+            }
+            Message::TogglePlugin(id, on) => {
+                self.config.plugins.enabled.retain(|p| *p != id);
+                if on {
+                    self.config.plugins.enabled.push(id);
+                }
+                self.reload_plugins();
+                let _ = self.config.save();
+            }
+            Message::UninstallPlugin(id) => {
+                match crate::plugins::uninstall(&id) {
+                    Ok(()) => self.notify("Plugin removed.", false),
+                    Err(e) => self.notify(format!("Couldn't remove it: {e}"), true),
+                }
+                self.reload_plugins();
+                let _ = self.config.save();
+            }
+            Message::ReloadPlugins => self.reload_plugins(),
+            Message::OpenSettingsTab(tab) => {
+                self.settings_tab = tab;
+                return self.load_page(Page::Settings);
+            }
             Message::ToggleFullscreen => {
                 let on = !self.fullscreen;
                 return self.set_fullscreen(on);
@@ -1183,7 +1706,7 @@ impl App {
                 }
                 self.set_position(ms);
             }
-            Message::Tick => {}
+            Message::Tick => self.tick_player(),
 
             Message::DjRequestChanged(s) => self.dj_request = s,
             Message::DjStart => {
@@ -1293,16 +1816,9 @@ impl App {
                     custom::remove_imported(&self.config.appearance.app_icon, "icons");
                     self.config.appearance.app_icon = saved.display().to_string();
                     self.save_quietly();
-                    self.sync_menu_entry();
-                    self.notify(
-                        if cfg!(target_os = "macos") {
-                            "Icon set for the window. To change the Dock icon, use Get Info on Haze.app in Finder."
-                        } else {
-                            "App icon updated"
-                        },
-                        false,
-                    );
-                    return self.apply_icon();
+                    let synced = self.sync_menu_entry();
+                    self.notify("App icon updated", false);
+                    return Task::batch([self.apply_icon(), synced]);
                 }
                 Err(e) => self.notify(format!("Couldn't use that image: {e:#}"), true),
             },
@@ -1310,9 +1826,18 @@ impl App {
                 custom::remove_imported(&self.config.appearance.app_icon, "icons");
                 self.config.appearance.app_icon = if name == "haze" { String::new() } else { name.to_string() };
                 self.save_quietly();
-                self.sync_menu_entry();
-                return self.apply_icon();
+                let synced = self.sync_menu_entry();
+                return Task::batch([self.apply_icon(), synced]);
             }
+            Message::AddDesktopShortcut => return sync_desktop_icon(self.config.appearance.app_icon.clone(), true),
+            Message::SyncDockIcon => desktop_icon::set_dock_icon(&self.config.appearance.app_icon),
+            Message::DesktopIconSynced(asked, result) => match result {
+                Ok(desktop_icon::Outcome::Created) => self.notify("Haze is on your desktop now", false),
+                Ok(_) if asked => self.notify("The Haze shortcut on your desktop has your icon", false),
+                Ok(_) => {}
+                Err(e) if asked => self.notify(format!("Couldn't make the desktop shortcut: {e}"), true),
+                Err(e) => log::warn!("desktop icon: {e}"),
+            },
             Message::PickCover(key) => {
                 return Task::perform(
                     async move { (key, custom::pick_image("Choose a cover").await) },
@@ -1437,6 +1962,31 @@ impl App {
             Message::DismissUpdate => self.update = None,
             Message::SettingsTab(tab) => self.settings_tab = tab,
             Message::Key(event) => {
+                if let Some(i) = self.recording_key {
+                    if let keyboard::Event::KeyPressed { key: keyboard::Key::Named(keyboard::key::Named::Escape), .. } = &event {
+                        self.recording_key = None;
+                    } else if let Some(chord) = keys::chord(&event) {
+                        self.recording_key = None;
+                        // One action per shortcut: take it off whatever had it before.
+                        for j in 0..crate::config::Keybindings::ACTIONS.len() {
+                            if j != i && self.config.keys.get(j) == chord {
+                                self.config.keys.set(j, String::new());
+                                self.notify(
+                                    format!("{} was taken from \"{}\".", keys::pretty(&chord), crate::config::Keybindings::ACTIONS[j]),
+                                    false,
+                                );
+                            }
+                        }
+                        self.config.keys.set(i, chord);
+                    }
+                    return Task::none();
+                }
+                if self.page == Page::Player
+                    && !self.fullscreen
+                    && let keyboard::Event::KeyPressed { key: keyboard::Key::Named(keyboard::key::Named::Escape), .. } = &event
+                {
+                    return self.update(Message::TogglePlayer);
+                }
                 if self.fullscreen
                     && let keyboard::Event::KeyPressed { key: keyboard::Key::Named(keyboard::key::Named::Escape), .. } =
                         &event
@@ -1457,12 +2007,23 @@ impl App {
         match update {
             PlayerUpdate::Playing { uri, position_ms } if is_current(&uri) => {
                 self.unavailable_in_a_row = 0;
+                let was_playing = self.playing;
                 self.playing = true;
                 self.set_position(position_ms);
+                if self.hooked_track.as_deref() != Some(uri.as_str()) {
+                    self.hooked_track = Some(uri);
+                    self.hook("track", &[]);
+                } else if !was_playing {
+                    self.hook("play", &[]);
+                }
             }
             PlayerUpdate::Paused { uri, position_ms } if is_current(&uri) => {
+                let was_playing = self.playing;
                 self.playing = false;
                 self.set_position(position_ms);
+                if was_playing {
+                    self.hook("pause", &[]);
+                }
             }
             PlayerUpdate::Position { uri, position_ms } if is_current(&uri) => {
                 self.set_position(position_ms);
@@ -1536,9 +2097,6 @@ impl App {
             LyricsSize(v) => ly.font_size = v,
             LyricsOffset(v) => ly.offset_ms = v as i32,
             LinesBefore(v) => ly.lines_before = v as usize,
-            Sidebar(s) => self.config.layout.sidebar = s,
-            SidePanel(s) => self.config.layout.side_panel = s,
-            PlayerBar(e) => self.config.layout.player_bar = e,
             Provider(p) if p != dj.provider => {
                 // A model or URL typed for the old provider would only make the new one fail.
                 dj.provider = p;
@@ -1571,6 +2129,14 @@ impl App {
             TtsModel(s) => dj.tts.model = s,
             DuckTo(v) => dj.tts.duck_to = v as u8,
             CheckUpdates(v) => self.config.updates.check = v,
+            PlayerStyle(p) => {
+                self.config.player = *p;
+                self.update_player_cover();
+            }
+            LayoutStyle(l) => {
+                self.show_side_panel = l.show_side_panel;
+                self.config.layout = *l;
+            }
         }
         if recolour_cover {
             self.update_cover_fx(true);
@@ -1611,7 +2177,10 @@ impl App {
             t("Do I Wanna Know?", "Arctic Monkeys", "AM", 272_000),
         ];
         // The built-in icon stands in for cover art, so the lyrics background and cover accent show.
-        self.images.insert("demo:cover".into(), image::Handle::from_bytes(custom::BUILTIN_ICON));
+        // HAZE_DEMO_COVER=some.jpg tries the player with real cover art.
+        let cover = std::env::var("HAZE_DEMO_COVER").ok().and_then(|p| std::fs::read(p).ok()).unwrap_or_else(|| custom::BUILTIN_ICON.to_vec());
+        self.images.insert("demo:cover".into(), image::Handle::from_bytes(cover));
+        self.demo = true;
         self.tracks[0].image_url = Some("demo:cover".into());
         let tracks = self.tracks.clone();
         self.queue.play_list(&tracks, 0);
@@ -1626,6 +2195,18 @@ impl App {
             }
             Ok("tracks") => Page::Liked,
             Ok("lyrics") => Page::Lyrics,
+            Ok("player") => Page::Player,
+            Ok(tab) if tab.starts_with("settings-") => {
+                self.settings_tab = match tab {
+                    "settings-player" => SettingsTab::Player,
+                    "settings-themes" => SettingsTab::Themes,
+                    "settings-layout" => SettingsTab::Layout,
+                    "settings-plugins" => SettingsTab::Plugins,
+                    "settings-keys" => SettingsTab::Keys,
+                    _ => SettingsTab::Dj,
+                };
+                Page::Settings
+            }
             _ => Page::Dj,
         };
         let lines = [

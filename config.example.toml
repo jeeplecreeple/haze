@@ -43,6 +43,7 @@ accent = ""               # e.g. "#1db954"
 danger = ""
 
 [layout]
+show_sidebar = true
 sidebar = "left"          # left | right
 sidebar_width = 220.0
 player_bar = "bottom"     # top | bottom
@@ -50,6 +51,49 @@ show_side_panel = true    # the up-next queue
 side_panel = "right"      # left | right
 side_panel_width = 300.0
 track_columns = ["title", "artist", "album", "duration"]   # any order, any subset
+gap = 8.0                 # space between panels
+padding = 24.0            # space around the page
+
+# The Now Playing page (Settings > Player has all of this, plus ready-made looks).
+[player]
+layout = "split"          # split (player and lyrics) | centered | compact (small player above lyrics)
+lyrics_side = "right"     # left | right
+lyrics_card = true        # the current line sits on a soft card
+full_window = true        # hide the sidebar, queue and player bar on this page
+background = "blur"       # blur | glow | theme
+cover_shape = "cookie"    # cookie | circle | flower | squircle | rounded | square
+cover_size = 0.0          # pixels; 0 = fit the window
+spin = false              # turn the cover slowly, like a record
+spin_speed = 4.0          # turns a minute
+wave_depth = 45.0         # 0-100, how deep the cookie and flower edges go
+wave_count = 12           # bumps around the edge
+visualizer = "ring"       # ring | ring_wave | bars | wave | off
+visualizer_color = "accent"  # accent | cover | rainbow | text | custom
+visualizer_custom = ""    # hex colour for "custom"
+visualizer_bars = 72
+visualizer_height = 22.0  # how far the bars reach, % of the cover
+visualizer_sensitivity = 100.0
+visualizer_smoothing = 60.0  # 0 = jumpy, 95 = very smooth
+visualizer_mirror = true  # lows at the bottom on both sides
+visualizer_glow = true
+bar_width = 4.0
+fps = 30                  # redraws a second while it moves; lower uses less CPU
+play_shape = "cookie"     # same shapes as the cover
+play_size = 64.0
+play_spin = true
+control_size = 20.0
+progress = "wave"         # wave | line | thick | dots | hidden
+show_times = true
+show_volume = true
+show_shuffle_repeat = true
+show_album = true
+show_extras = false       # buttons for the queue, DJ and lyrics
+title_size = 26.0
+align = "center"          # center | left
+
+# Plugins switched on, by folder name in the "plugins" folder. Settings > Plugins manages this.
+[plugins]
+enabled = []
 
 [lyrics]
 sources = ["spotify", "lrclib"]   # tried in order; lrclib = lrclib.net, a free community database
@@ -93,7 +137,9 @@ base_url = ""             # empty = the DJ's OpenAI-compatible URL, else api.ope
 api_key_env = ""          # empty = the DJ's key (openai provider) or OPENAI_API_KEY
 duck_to = 25              # music volume % while the DJ talks; 0 pauses instead
 
-# Keys: a character or space, enter, escape, tab, left, right, up, down.
+# Easiest to change in Settings > Shortcuts. Empty = no shortcut.
+# Keys: a character or space, enter, escape, tab, left, right, up, down, backspace, delete, home,
+# end, pageup, pagedown, f1-f12.
 # Modifiers: ctrl (also Cmd on macOS), shift, alt. Media keys always work.
 [keys]
 play_pause = "ctrl+space"
@@ -107,3 +153,5 @@ search = "ctrl+f"
 toggle_side_panel = "ctrl+b"
 dj_now = "ctrl+d"
 lyrics = "ctrl+l"
+now_playing = "ctrl+p"
+fullscreen = "f11"

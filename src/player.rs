@@ -9,7 +9,9 @@ use librespot_core::cache::Cache;
 use librespot_core::config::SessionConfig;
 use librespot_core::session::Session;
 use librespot_core::spotify_uri::SpotifyUri;
-use librespot_playback::audio_backend;
+use librespot_playback::audio_backend::{self, Sink, SinkResult};
+use librespot_playback::convert::Converter;
+use librespot_playback::decoder::AudioPacket;
 use librespot_playback::config::{AudioFormat, Bitrate as LsBitrate, PlayerConfig};
 use librespot_playback::mixer::{self, Mixer, MixerConfig};
 use librespot_playback::player::{Player, PlayerEvent};
@@ -61,7 +63,7 @@ impl Audio {
         };
         let backend = audio_backend::find(None).context("no audio output backend")?;
         let player = Player::new(player_config, session.clone(), mixer.get_soft_volume(), move || {
-            backend(None, AudioFormat::default())
+            Box::new(Tapped(backend(None, AudioFormat::default())))
         });
 
         let mut channel = player.get_player_event_channel();
@@ -193,6 +195,26 @@ async fn playback_login(client_id: &str) -> Result<Credentials> {
         .await?
         .map_err(|e| anyhow!("playback login failed: {e}"))?;
     Ok(Credentials::with_access_token(token.access_token))
+}
+
+/// The real audio output, with each packet also handed to the visualizer on its way through.
+struct Tapped(Box<dyn Sink>);
+
+impl Sink for Tapped {
+    fn start(&mut self) -> SinkResult<()> {
+        self.0.start()
+    }
+
+    fn stop(&mut self) -> SinkResult<()> {
+        self.0.stop()
+    }
+
+    fn write(&mut self, packet: AudioPacket, converter: &mut Converter) -> SinkResult<()> {
+        if let AudioPacket::Samples(samples) = &packet {
+            crate::visualizer::feed(samples);
+        }
+        self.0.write(packet, converter)
+    }
 }
 
 /// How far librespot's reported position runs ahead of what you hear: it counts what has been

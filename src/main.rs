@@ -2,13 +2,16 @@
 
 mod config;
 mod dj;
+mod layouts;
 mod lyrics;
 mod player;
+mod plugins;
 mod queue;
 mod spotify;
 mod theme;
 mod ui;
 mod update;
+mod visualizer;
 
 fn main() {
     let logger = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("haze=info,librespot=warn")).build();

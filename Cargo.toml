@@ -1,6 +1,6 @@
 [package]
 name = "haze"
-version = "0.4.3"
+version = "0.5.0"
 edition = "2024"
 description = "A native, lightweight, heavily customisable Spotify client with an AI DJ"
 license = "MIT"
@@ -20,7 +20,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 urlencoding = "2"
 
 # UI: iced is a pure-Rust native toolkit (wgpu, with a CPU tiny-skia fallback). No webview.
-iced = { version = "0.14", features = ["tokio", "image-without-codecs"] }
+iced = { version = "0.14", features = ["tokio", "image-without-codecs", "canvas"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp", "ico", "tiff", "tga", "qoi"] }
 # Reads family names out of font files you add.
 ttf-parser = { version = "0.25", default-features = false, features = ["std"] }
@@ -38,6 +38,12 @@ rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 flate2 = "1"
 tar = "0.4"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+
+# The Dock icon and Haze.app's Finder icon follow the icon you choose.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSImage", "NSResponder", "NSWorkspace"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData", "NSString"] }
 
 [profile.release]
 opt-level = 3

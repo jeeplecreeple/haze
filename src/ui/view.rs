@@ -7,13 +7,22 @@ use iced::widget::{
 use iced::{Alignment, ContentFit, Element, Fill, Font, Length, Padding, Shrink, font};
 
 use super::icon::{self, icon};
-use super::{App, DEFAULT_FONT, Edit, Login, Message, Page, SYSTEM_FONT, SettingsTab, UpdateStatus, custom, style};
+use super::{App, DEFAULT_FONT, Edit, Login, Message, Page, SYSTEM_FONT, SettingsTab, UpdateStatus, custom, desktop_icon, style};
 use crate::config::{DjMode, Edge, LlmProvider, LyricsAlign, LyricsProvider, Side, TtsEngine, non_empty};
 use crate::lyrics::{Line, Lyrics};
 use crate::queue::{Origin, Repeat};
 use crate::spotify::api::{Playlist, Track};
 
+mod layout_editor;
+mod layouts;
+mod player;
+mod player_settings;
+mod plugins;
 mod setup;
+mod shortcuts;
+mod themes;
+
+pub use themes::{THEME_SLOTS, theme_slot_color};
 
 type El<'a> = Element<'a, Message>;
 
@@ -25,10 +34,12 @@ fn mmss(ms: u32) -> String {
 /// Shown under the DJ provider picker: in Haz's testing these gave the best picks and intros.
 const PROVIDER_TIP: &str = "Tip: Groq (free) or Ollama (on your computer) usually work best.";
 
-/// The gap between panels, and their inner padding.
-const GAP: f32 = 8.0;
-
 impl App {
+    /// The gap between panels.
+    fn gap(&self) -> f32 {
+        self.config.layout.gap.clamp(0.0, 40.0)
+    }
+
     fn fs(&self, scale: f32) -> f32 {
         self.config.appearance.font_size * scale
     }
@@ -49,6 +60,13 @@ impl App {
         if !a.show_album_art || self.setup.is_some() || self.login != Login::LoggedIn || self.queue.current().is_none() {
             return None;
         }
+        if self.page == Page::Player {
+            return match self.config.player.background {
+                crate::config::PlayerBackground::Blur => self.lyrics_background.as_ref(),
+                crate::config::PlayerBackground::Glow => self.ambient.as_ref(),
+                crate::config::PlayerBackground::Theme => None,
+            };
+        }
         if self.lyrics_backdrop() {
             return self.lyrics_background.as_ref();
         }
@@ -56,7 +74,9 @@ impl App {
     }
 
     fn lyrics_backdrop(&self) -> bool {
-        self.page == Page::Lyrics && self.config.lyrics.blurred_background && self.lyrics_background.is_some()
+        let lyrics = self.page == Page::Lyrics && self.config.lyrics.blurred_background;
+        let player = self.page == Page::Player && self.config.player.background == crate::config::PlayerBackground::Blur;
+        (lyrics || player) && self.lyrics_background.is_some()
     }
 
     /// The main panels: see-through over the cover glow, solid otherwise.
@@ -163,7 +183,7 @@ impl App {
                 .width(Fill)
                 .style(style::banner(self.colors, self.panel_r(), notice.error)),
             )
-            .padding(Padding::new(GAP).bottom(0)),
+            .padding(Padding::new(self.gap()).bottom(0)),
             );
         }
         if self.setup.is_none()
@@ -230,7 +250,7 @@ impl App {
                     .width(Fill)
                     .style(style::banner(self.colors, self.panel_r(), matches!(u.status, UpdateStatus::Failed(_)))),
             )
-            .padding(Padding::new(GAP).bottom(0))
+            .padding(Padding::new(self.gap()).bottom(0))
             .into(),
         )
     }
@@ -279,11 +299,20 @@ impl App {
 
     fn main_layout(&self) -> El<'_> {
         let layout = &self.config.layout;
-        let on_lyrics = self.page == Page::Lyrics;
+        if self.page == Page::Player && (self.config.player.full_window || self.fullscreen) {
+            // The player fills the window, straight on the cover backdrop.
+            let clear = self.backdrop().is_some();
+            return container(self.page_view())
+                .width(Fill)
+                .height(Fill)
+                .style(style::glass(self.colors, 0.0, if clear { 0.0 } else { 1.0 }))
+                .into();
+        }
+        let on_lyrics = matches!(self.page, Page::Lyrics | Page::Player);
         let main = container(self.page_view())
             .width(Fill)
             .height(Fill)
-            .padding(if on_lyrics { 0.0 } else { 24.0 })
+            .padding(if on_lyrics { 0.0 } else { layout.padding.clamp(0.0, 64.0) })
             .clip(true)
             .style(if on_lyrics && self.lyrics_backdrop() {
                 // The lyrics float straight on the blurred cover that fills the window.
@@ -291,15 +320,17 @@ impl App {
             } else {
                 style::glass(self.colors, self.panel_r(), if self.backdrop().is_some() { 0.78 } else { 1.0 })
             });
-        let bar = container(self.player_bar()).padding(GAP);
+        let bar = container(self.player_bar()).padding(self.gap());
         if on_lyrics && self.fullscreen {
-            return column![container(main).padding(Padding::new(GAP).bottom(0)).height(Fill), bar].into();
+            return column![container(main).padding(Padding::new(self.gap()).bottom(0)).height(Fill), bar].into();
         }
         let mut left: Vec<El> = Vec::new();
         let mut right: Vec<El> = Vec::new();
-        match layout.sidebar {
-            Side::Left => left.push(self.sidebar()),
-            Side::Right => right.push(self.sidebar()),
+        if layout.show_sidebar {
+            match layout.sidebar {
+                Side::Left => left.push(self.sidebar()),
+                Side::Right => right.push(self.sidebar()),
+            }
         }
         if self.show_side_panel {
             match layout.side_panel {
@@ -307,10 +338,10 @@ impl App {
                 Side::Right => right.insert(0, self.side_panel()),
             }
         }
-        let body = row(left).push(main).extend(right).spacing(GAP).height(Fill);
+        let body = row(left).push(main).extend(right).spacing(self.gap()).height(Fill);
         match layout.player_bar {
-            Edge::Top => column![bar, container(body).padding(Padding::new(GAP).top(0))].into(),
-            Edge::Bottom => column![container(body).padding(Padding::new(GAP).bottom(0)), bar].into(),
+            Edge::Top => column![bar, container(body).padding(Padding::new(self.gap()).top(0))].into(),
+            Edge::Bottom => column![container(body).padding(Padding::new(self.gap()).bottom(0)), bar].into(),
         }
     }
 
@@ -379,6 +410,7 @@ impl App {
             self.nav(icon::SPARKLES, "DJ", Page::Dj),
             self.nav(icon::SEARCH, "Search", Page::Search),
             self.nav(icon::HEART, "Liked Songs", Page::Liked),
+            self.nav(icon::DISC_3, "Now Playing", Page::Player),
             self.nav(icon::MIC_VOCAL, "Lyrics", Page::Lyrics),
         ]
         .spacing(2);
@@ -456,6 +488,7 @@ impl App {
             .spacing(16)
             .into(),
             Page::Lyrics => self.lyrics_page(),
+            Page::Player => self.player_page(),
             Page::Settings => self.settings_page(),
         }
     }
@@ -662,7 +695,7 @@ impl App {
                 (None, _) => self.lyrics_message("Play a song to see its lyrics here."),
                 (Some(_), None) if self.lyrics_loading => self.lyrics_message("Looking for lyrics…"),
                 (Some(_), None) => self.lyrics_message("No lyrics for this song."),
-                (Some(_), Some(l)) if l.synced => self.synced_lyrics(l, align, lyrics_width),
+                (Some(_), Some(l)) if l.synced => self.synced_lyrics(l, align, lyrics_width, false),
                 (Some(_), Some(l)) => self.plain_lyrics(l, align),
             };
             let name = current.map(|t| t.name.clone()).unwrap_or_else(|| "Lyrics".into());
@@ -708,13 +741,13 @@ impl App {
         content.into()
     }
 
-    fn lyrics_message(&self, message: &'static str) -> El<'_> {
+    pub(super) fn lyrics_message(&self, message: &'static str) -> El<'_> {
         container(text(message).size(self.config.lyrics.font_size * 0.7).font(self.lyrics_font()).color(style::alpha(self.colors.text, 0.6)))
             .center(Fill)
             .into()
     }
 
-    fn plain_lyrics(&self, l: &Lyrics, align: Alignment) -> El<'_> {
+    pub(super) fn plain_lyrics(&self, l: &Lyrics, align: Alignment) -> El<'_> {
         let size = self.config.lyrics.font_size * 0.8;
         let mut lines = Column::new().spacing(size * 0.45).align_x(align).width(Fill);
         for line in &l.lines {
@@ -734,7 +767,7 @@ impl App {
     /// shine on the edge of the fill. When a new line starts the lines glide up rather than jump,
     /// lines further away fade out, and long instrumental breaks show three breathing dots that
     /// fill up until the singing starts again.
-    fn synced_lyrics(&self, l: &Lyrics, align: Alignment, width: f32) -> El<'_> {
+    pub(super) fn synced_lyrics(&self, l: &Lyrics, align: Alignment, width: f32, card: bool) -> El<'_> {
         let ly = &self.config.lyrics;
         let heard = self.live_position().saturating_sub(crate::player::OUTPUT_DELAY_MS);
         let pos = (heard as i64 - ly.offset_ms as i64).max(0) as u32;
@@ -787,11 +820,14 @@ impl App {
                 let alpha = if past { 0.3 - 0.05 * distance } else { 0.5 - 0.07 * distance };
                 text(line.text()).size(size).font(font).color(faded(alpha.max(0.1))).align_x(align).width(Fill).into()
             };
+            let on_card = card && Some(i) == active && !in_gap;
             col = col.push(
                 button(body)
                     .width(Fill)
-                    .padding([pad_y, 14.0])
-                    .style(style::lyric_line(self.colors, self.r()))
+                    .padding(if on_card { [pad_y * 3.0, 22.0] } else { [pad_y, 14.0] })
+                    .style(move |t: &iced::Theme, st| {
+                        if on_card { style::lyric_card(self.colors, self.panel_r() * 1.4)(t, st) } else { style::lyric_line(self.colors, self.r())(t, st) }
+                    })
                     .on_press(Message::SeekTo(line.start_ms)),
             );
         }
@@ -998,7 +1034,7 @@ impl App {
         let position = self.seek_preview.unwrap_or(self.live_position() as f32).min(duration.max(1.0));
 
         let info = row![
-            self.cover(current, 56.0),
+            button(self.cover(current, 56.0)).padding(0).style(style::bare()).on_press(Message::TogglePlayer),
             column![
                 text(current.map(|t| t.name.clone()).unwrap_or_else(|| "Not playing".into()))
                     .size(self.fs(1.0))
@@ -1049,6 +1085,7 @@ impl App {
             _ => icon::VOLUME_2,
         };
         let right = row![
+            self.icon_button(icon::DISC_3, size, Some(Message::TogglePlayer), self.page == Page::Player),
             self.icon_button(icon::MIC_VOCAL, size, Some(Message::ToggleLyrics), self.page == Page::Lyrics),
             self.icon_button(
                 icon::SPARKLES,
@@ -1252,9 +1289,18 @@ impl App {
             }
         }
         voice_rows.push(self.number("Music volume while talking %", dj.tts.duck_to as f32, 0.0..=100.0, Edit::DuckTo));
+        let mut icon_buttons = row![self.small_button(Some(icon::IMAGE), "Use your own image…", Message::PickIcon)].spacing(8);
+        if desktop_icon::CAN_CREATE {
+            icon_buttons = icon_buttons.push(self.small_button(Some(icon::MONITOR), "Put Haze on the desktop", Message::AddDesktopShortcut));
+        }
         let icon_controls = column![
             self.icon_picker(34.0),
-            self.small_button(Some(icon::IMAGE), "Use your own image…", Message::PickIcon),
+            icon_buttons.wrap(),
+            self.muted(if cfg!(target_os = "macos") {
+                "Used for the window, the Dock and Haze.app in Finder."
+            } else {
+                "Used for the window, the app menu and the Haze shortcut on your desktop."
+            }),
         ]
         .spacing(10);
         let look_rows = vec![
@@ -1312,11 +1358,7 @@ impl App {
                 .align_y(Alignment::Center),
             ),
         ];
-        let layout_rows = vec![
-            self.setting("Sidebar", self.picker(Side::ALL, Some(l.sidebar), |s| Message::Edit(Edit::Sidebar(s)))),
-            self.setting("Queue panel", self.picker(Side::ALL, Some(l.side_panel), |s| Message::Edit(Edit::SidePanel(s)))),
-            self.setting("Player bar", self.picker(Edge::ALL, Some(l.player_bar), |e| Message::Edit(Edit::PlayerBar(e)))),
-        ];
+        let _ = l;
 
         let update_rows = vec![
             self.setting(
@@ -1357,7 +1399,11 @@ impl App {
                 .into(),
                 SettingsTab::Look => self.section(icon::PALETTE, "Appearance", look_rows),
                 SettingsTab::Lyrics => self.section(icon::MIC_VOCAL, "Lyrics", lyrics_rows),
-                SettingsTab::Layout => self.section(icon::SLIDERS_HORIZONTAL, "Layout", layout_rows),
+                SettingsTab::Layout => column![self.layout_editor(), self.layouts_section()].spacing(16).into(),
+                SettingsTab::Player => self.player_settings(),
+                SettingsTab::Themes => self.theme_maker(),
+                SettingsTab::Plugins => self.plugins_page(),
+                SettingsTab::Keys => self.shortcuts_page(),
                 SettingsTab::Updates => self.section(icon::ROTATE_CCW, "Updates", update_rows),
             },
         ]

@@ -62,29 +62,163 @@ struct ThemeFile {
     colors: ColorOverrides,
 }
 
+static PLUGIN_DIRS: std::sync::Mutex<Vec<std::path::PathBuf>> = std::sync::Mutex::new(Vec::new());
+
+/// The `themes` folders of switched-on plugins, searched after your own `themes` folder.
+pub fn set_plugin_dirs(dirs: Vec<std::path::PathBuf>) {
+    if let Ok(mut d) = PLUGIN_DIRS.lock() {
+        *d = dirs;
+    }
+}
+
+fn theme_dirs() -> Vec<std::path::PathBuf> {
+    let mut dirs: Vec<_> = crate::config::data_dir("themes").into_iter().collect();
+    dirs.extend(PLUGIN_DIRS.lock().map(|d| d.clone()).unwrap_or_default());
+    dirs
+}
+
 fn theme_file(name: &str) -> Option<ThemeFile> {
     if PRESETS.contains(&name) || name.contains(['/', '\\', '.']) {
         return None;
     }
-    let path = crate::config::data_dir("themes").ok()?.join(format!("{name}.toml"));
+    let path = theme_dirs().into_iter().map(|d| d.join(format!("{name}.toml"))).find(|p| p.is_file())?;
     let text = std::fs::read_to_string(path).ok()?;
     toml::from_str(&text).map_err(|e| log::warn!("theme {name}: {e}")).ok()
 }
 
-/// Theme names from the `themes` folder.
+/// Theme names from your `themes` folder and from plugins.
 pub fn custom_themes() -> Vec<String> {
-    let Ok(dir) = crate::config::data_dir("themes") else { return Vec::new() };
-    let mut names: Vec<String> = std::fs::read_dir(dir)
+    let mut names: Vec<String> = theme_dirs()
         .into_iter()
-        .flatten()
-        .flatten()
+        .flat_map(|dir| std::fs::read_dir(dir).into_iter().flatten().flatten())
         .filter_map(|e| {
             let p = e.path();
             (p.extension()? == "toml").then(|| p.file_stem()?.to_str().map(str::to_string)).flatten()
         })
+        .filter(|n| !PRESETS.contains(&n.as_str()))
         .collect();
     names.sort();
+    names.dedup();
     names
+}
+
+/// Whether `name` is a theme file in your own `themes` folder (so it can be deleted).
+pub fn is_yours(name: &str) -> bool {
+    !name.contains(['/', '\\']) && crate::config::data_dir("themes").is_ok_and(|d| d.join(format!("{name}.toml")).is_file())
+}
+
+/// A theme's colours on their own, without your overrides: for the swatches in the theme maker.
+pub fn colors_of(name: &str) -> Colors {
+    resolve(&Appearance { theme: name.to_string(), colors: ColorOverrides::default(), ..Appearance::default() })
+}
+
+pub fn to_hex(c: Color) -> String {
+    let [r, g, b, _] = c.into_rgba8();
+    format!("#{r:02x}{g:02x}{b:02x}")
+}
+
+/// A theme file's text, with every colour written out so it doesn't depend on its base.
+pub fn theme_toml(name: &str, colors: &Colors) -> String {
+    format!(
+        "# A Haze theme. Put it in the themes folder, or paste it into Settings > Theme maker.\n\
+         name = \"{name}\"\n\
+         background = \"{}\"\nsurface = \"{}\"\ntext = \"{}\"\nmuted_text = \"{}\"\naccent = \"{}\"\ndanger = \"{}\"\n",
+        to_hex(colors.background),
+        to_hex(colors.surface),
+        to_hex(colors.text),
+        to_hex(colors.muted_text),
+        to_hex(colors.accent),
+        to_hex(colors.danger),
+    )
+}
+
+/// A file-safe theme name: letters, digits and dashes.
+pub fn theme_slug(name: &str) -> String {
+    let s = crate::plugins::slug(name);
+    if PRESETS.contains(&s.as_str()) { format!("{s}-custom") } else { s }
+}
+
+/// Saves a theme into your `themes` folder and returns the name to select it by.
+pub fn save_theme(name: &str, colors: &Colors) -> anyhow::Result<String> {
+    let slug = theme_slug(name);
+    let path = crate::config::data_dir("themes")?.join(format!("{slug}.toml"));
+    std::fs::write(path, theme_toml(name, colors))?;
+    Ok(slug)
+}
+
+/// Saves a theme from its text (a pasted or imported theme file). `fallback` names it if the
+/// text doesn't.
+pub fn import_theme(text: &str, fallback: &str) -> anyhow::Result<String> {
+    #[derive(serde::Deserialize)]
+    struct Named {
+        #[serde(default)]
+        name: String,
+    }
+    let file: ThemeFile = toml::from_str(text).map_err(|e| anyhow::anyhow!("that isn't a theme file: {e}"))?;
+    let named: Named = toml::from_str(text).unwrap_or(Named { name: String::new() });
+    let mut colors = preset(if file.base.is_empty() { "haze" } else { &file.base });
+    if [&file.colors.background, &file.colors.text, &file.colors.accent].iter().all(|c| c.is_empty()) {
+        anyhow::bail!("that theme file has no colours in it");
+    }
+    apply_overrides(&mut colors, &file.colors);
+    let name = if named.name.trim().is_empty() { fallback } else { named.name.trim() };
+    save_theme(name, &colors)
+}
+
+pub fn delete_theme(name: &str) -> anyhow::Result<()> {
+    if !is_yours(name) {
+        anyhow::bail!("only your own themes can be deleted");
+    }
+    std::fs::remove_file(crate::config::data_dir("themes")?.join(format!("{name}.toml")))?;
+    Ok(())
+}
+
+/// A full palette that goes with `accent`: dark or light page colours tinted toward its hue.
+pub fn palette_from(accent: Color, dark: bool) -> Colors {
+    let (h, s, _) = rgb_to_hsl(accent);
+    let c = |s: f32, l: f32| {
+        let (r, g, b) = crate::ui::hsl(h, s, l);
+        Color::from_rgb(r, g, b)
+    };
+    let tint = (s * 0.35).min(0.3);
+    if dark {
+        Colors {
+            background: c(tint, 0.07),
+            surface: c(tint, 0.115),
+            text: c(tint * 0.4, 0.95),
+            muted_text: c(tint * 0.6, 0.66),
+            accent,
+            danger: Color::from_rgb8(0xff, 0x4d, 0x4f),
+        }
+    } else {
+        Colors {
+            background: c(tint, 0.965),
+            surface: c(tint * 0.5, 1.0),
+            text: c(tint, 0.12),
+            muted_text: c(tint, 0.4),
+            accent,
+            danger: Color::from_rgb8(0xd9, 0x2d, 0x20),
+        }
+    }
+}
+
+/// Hue (0-360), saturation and lightness (0-1).
+pub fn rgb_to_hsl(c: Color) -> (f32, f32, f32) {
+    let (max, min) = (c.r.max(c.g).max(c.b), c.r.min(c.g).min(c.b));
+    let l = (max + min) / 2.0;
+    if max - min < 1e-6 {
+        return (0.0, 0.0, l);
+    }
+    let d = max - min;
+    let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
+    let h = if max == c.r {
+        (c.g - c.b) / d + if c.g < c.b { 6.0 } else { 0.0 }
+    } else if max == c.g {
+        (c.b - c.r) / d + 2.0
+    } else {
+        (c.r - c.g) / d + 4.0
+    };
+    (h * 60.0, s, l)
 }
 
 fn apply_overrides(colors: &mut Colors, o: &ColorOverrides) {
@@ -190,5 +324,26 @@ mod tests {
         let c = resolve(&a);
         assert_eq!(c.accent, Color::from_rgb8(255, 0, 0));
         assert_eq!(c.background, parse_hex("#2e3440").unwrap());
+    }
+
+    #[test]
+    fn hsl_round_trip() {
+        for hex in ["#ff5c8a", "#1db954", "#2e3440", "#ffffff", "#7c3aed"] {
+            let c = parse_hex(hex).unwrap();
+            let (h, s, l) = rgb_to_hsl(c);
+            let (r, g, b) = crate::ui::hsl(h, s, l);
+            assert_eq!(to_hex(Color::from_rgb(r, g, b)), hex);
+        }
+    }
+
+    #[test]
+    fn theme_text_round_trips() {
+        let colors = preset("dracula");
+        let text = theme_toml("My Dracula", &colors);
+        let file: ThemeFile = toml::from_str(&text).unwrap();
+        let mut back = preset("haze");
+        apply_overrides(&mut back, &file.colors);
+        assert_eq!(to_hex(back.accent), to_hex(colors.accent));
+        assert_eq!(to_hex(back.background), to_hex(colors.background));
     }
 }

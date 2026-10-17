@@ -281,6 +281,30 @@ pub fn lyric_line(colors: Colors, radius: f32) -> impl Fn(&Theme, button::Status
     }
 }
 
+/// The current lyric line on the Now Playing page: a soft frosted card.
+pub fn lyric_card(colors: Colors, radius: f32) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_, status| {
+        let lift = if matches!(status, button::Status::Hovered | button::Status::Pressed) { 0.04 } else { 0.0 };
+        button::Style {
+            background: Some(Background::Color(alpha(colors.text, 0.1 + lift))),
+            text_color: colors.text,
+            border: Border { radius: radius.into(), width: 1.0, color: alpha(colors.text, 0.08) },
+            ..button::Style::default()
+        }
+    }
+}
+
+/// A button that draws nothing itself, for clickable art and shapes.
+pub fn bare() -> impl Fn(&Theme, button::Status) -> button::Style {
+    |_, status| button::Style {
+        background: None,
+        text_color: Color::WHITE,
+        shadow: iced::Shadow::default(),
+        border: Border::default(),
+        snap: matches!(status, button::Status::Active),
+    }
+}
+
 /// Thin seek and volume bars that light up in the accent colour on hover.
 pub fn seek_slider(colors: Colors) -> impl Fn(&Theme, slider::Status) -> slider::Style {
     move |_, status| {
