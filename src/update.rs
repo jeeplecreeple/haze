@@ -64,8 +64,15 @@ fn client() -> Result<reqwest::Client> {
     Ok(reqwest::Client::builder().user_agent(USER_AGENT).build()?)
 }
 
+/// Compares dotted version numbers, so a tag like v0.3.0.1 works as well as v0.3.1.
 fn is_newer(tag: &str, current: &str) -> bool {
-    let parse = |v: &str| semver::Version::parse(v.trim().trim_start_matches('v')).ok();
+    let parse = |v: &str| -> Option<Vec<u64>> {
+        let mut parts = v.trim().trim_start_matches('v').split('.').map(|p| p.parse().ok()).collect::<Option<Vec<u64>>>()?;
+        while parts.len() > 1 && parts.last() == Some(&0) {
+            parts.pop();
+        }
+        Some(parts)
+    };
     matches!((parse(tag), parse(current)), (Some(tag), Some(current)) if tag > current)
 }
 
@@ -241,6 +248,9 @@ mod tests {
         assert!(!is_newer("v0.2.0", "0.2.0"));
         assert!(!is_newer("v0.1.9", "0.2.0"));
         assert!(!is_newer("nightly", "0.2.0"));
+        assert!(is_newer("v0.3.0.1", "0.3.0"));
+        assert!(!is_newer("v0.2.5.0", "0.3.0"));
+        assert!(!is_newer("v0.3.0.0", "0.3.0"));
     }
 
     #[test]

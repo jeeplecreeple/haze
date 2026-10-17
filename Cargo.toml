@@ -35,7 +35,6 @@ rodio = { version = "0.21", default-features = false, features = ["playback", "m
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 
 # The updater: compares release versions and unpacks the downloaded build.
-semver = "1"
 flate2 = "1"
 tar = "0.4"
 zip = { version = "2", default-features = false, features = ["deflate"] }
