@@ -169,7 +169,11 @@ async fn playback_login(client_id: &str) -> Result<Credentials> {
         .with_custom_message(crate::spotify::auth::LOGIN_PAGE)
         .build()
         .map_err(|e| anyhow!("playback login setup failed: {e}"))?;
-    let token = client.get_access_token_async().await.map_err(|e| anyhow!("playback login failed: {e}"))?;
+    // librespot's "async" login still waits for the browser on a blocking socket, which stalls
+    // whatever else the runtime thread had queued (your profile and playlists), so it gets its own thread.
+    let token = tokio::task::spawn_blocking(move || client.get_access_token())
+        .await?
+        .map_err(|e| anyhow!("playback login failed: {e}"))?;
     Ok(Credentials::with_access_token(token.access_token))
 }
 
@@ -177,6 +181,11 @@ async fn playback_login(client_id: &str) -> Result<Credentials> {
 const PLAYBACK_REDIRECT: &str = "http://127.0.0.1:8898/login";
 
 /// Forgets the saved playback login, for logging out.
+/// Whether a reusable playback login is saved, so connecting won't open the browser.
+pub fn has_playback_login() -> bool {
+    config::cache_dir().is_ok_and(|dir| dir.join("session").join("credentials.json").exists())
+}
+
 pub fn forget_playback_login() {
     if let Ok(dir) = config::cache_dir() {
         let _ = std::fs::remove_file(dir.join("session").join("credentials.json"));

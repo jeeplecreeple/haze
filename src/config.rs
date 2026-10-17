@@ -65,6 +65,8 @@ pub fn data_dir(name: &str) -> Result<PathBuf> {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
+    /// Set once the first-run setup is finished, so it isn't shown again.
+    pub setup_done: bool,
     pub spotify: SpotifyConfig,
     pub playback: PlaybackConfig,
     pub appearance: Appearance,
@@ -609,6 +611,14 @@ pub fn non_empty(s: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remembers_the_finished_setup() {
+        let config = Config { setup_done: true, ..Config::default() };
+        let back: Config = toml::from_str(&toml::to_string_pretty(&config).unwrap()).unwrap();
+        assert!(back.setup_done);
+        assert!(!toml::from_str::<Config>("[spotify]\nclient_id = \"x\"").unwrap().setup_done);
+    }
 
     #[test]
     fn partial_config_uses_defaults() {

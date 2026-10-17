@@ -407,7 +407,7 @@ impl App {
             theme: theme::iced_theme(&colors),
             colors,
             login: if has_client { Login::LoggedOut } else { Login::NeedsClientId },
-            setup: (!has_client).then(|| Setup::new(SetupStep::Hello)),
+            setup: (!config.setup_done).then(|| Setup::new(SetupStep::Hello)),
             update: None,
             settings_tab: SettingsTab::Dj,
             unavailable_in_a_row: 0,
@@ -476,8 +476,9 @@ impl App {
             }
             return (app, Task::none());
         }
-        // Log straight back in when a previous login is cached.
-        let login = if has_client && Auth::has_cached_login() { Task::done(Message::Login) } else { Task::none() };
+        // Log straight back in when a previous login is cached. During the setup this waits for
+        // its login step, so the browser doesn't open over the welcome screen.
+        let login = if has_client && app.setup.is_none() && Auth::has_cached_login() { Task::done(Message::Login) } else { Task::none() };
         let check = if app.config.updates.check { Task::done(Message::CheckForUpdates(false)) } else { Task::none() };
         (app, Task::batch([login, check]))
     }
@@ -875,6 +876,9 @@ impl App {
                 let tx = PLAYER_TX.get().expect("player channel").clone();
                 let (a1, a2) = (api.clone(), api.clone());
                 let playback = self.config.playback.clone();
+                if !crate::player::has_playback_login() {
+                    self.notify("Your browser opened Spotify once more so Haze can play music. Approve it there.", false);
+                }
                 return Task::batch([
                     Task::perform(
                         async move { Audio::connect(playback, tx).await.map(Arc::new).map_err(err) },
@@ -888,7 +892,12 @@ impl App {
                 self.login = Login::LoggedOut;
                 self.notify(e, true);
             }
-            Message::AudioReady(Ok(audio)) => self.audio = Some(audio),
+            Message::AudioReady(Ok(audio)) => {
+                self.audio = Some(audio);
+                if self.notice.as_ref().is_some_and(|n| n.text.starts_with("Your browser opened Spotify once more")) {
+                    self.notice = None;
+                }
+            }
             Message::AudioReady(Err(e)) => self.notify(e, true),
             Message::Profile(Ok(name)) => self.user_name = name,
             Message::Playlists(Ok(list)) => {
@@ -922,6 +931,12 @@ impl App {
             }
             Message::SetupFinish => {
                 self.setup = None;
+                if !self.config.setup_done {
+                    self.config.setup_done = true;
+                    if let Err(e) = self.config.save() {
+                        self.notify(format!("Couldn't save config: {e:#}"), true);
+                    }
+                }
                 if self.login != Login::LoggedIn {
                     self.login = if self.config.spotify.client_id.trim().is_empty() {
                         Login::NeedsClientId
