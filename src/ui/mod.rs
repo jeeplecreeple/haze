@@ -274,6 +274,10 @@ pub enum Message {
     Edit(Edit),
     PickIcon,
     IconPicked(Option<PathBuf>),
+    /// No file picker could be opened.
+    PickFailed(String),
+    /// A file was dragged onto the window.
+    FileDropped(PathBuf),
     /// A built-in icon by name.
     SetIcon(&'static str),
     PickCover(String),
@@ -299,11 +303,13 @@ pub enum Edit {
     Compact(bool),
     AlbumArt(bool),
     AccentFromCover(bool),
+    AmbientBackground(bool),
     AppFont(String),
     LyricsFont(String),
     WordHighlight(bool),
     BlurredBackground(bool),
     LyricsAlign(crate::config::LyricsAlign),
+    LyricsProvider(crate::config::LyricsProvider),
     LyricsSize(f32),
     LyricsOffset(f32),
     LinesBefore(f32),
@@ -384,6 +390,8 @@ pub struct App {
     /// Cover-derived extras for the current song: the lyrics background and the accent colour.
     cover_fx_for: Option<String>,
     pub lyrics_background: Option<image::Handle>,
+    /// The same, stronger, behind the whole window (`appearance.ambient_background`).
+    pub ambient: Option<image::Handle>,
     cover_accent: Option<Color>,
 
     pub dj_on: bool,
@@ -444,6 +452,7 @@ impl App {
             fullscreen: false,
             cover_fx_for: None,
             lyrics_background: None,
+            ambient: None,
             cover_accent: None,
             dj_on: false,
             dj_busy: false,
@@ -498,7 +507,14 @@ impl App {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        let mut subs = vec![Subscription::run(player_events), keyboard::listen().map(Message::Key)];
+        let mut subs = vec![
+            Subscription::run(player_events),
+            keyboard::listen().map(Message::Key),
+            iced::event::listen_with(|event, _, _| match event {
+                iced::Event::Window(window::Event::FileDropped(path)) => Some(Message::FileDropped(path)),
+                _ => None,
+            }),
+        ];
         if let Some(setup) = self.setup.as_ref().filter(|s| s.animating(&self.login)) {
             // Slides get every frame; the slower loops (the hello, waiting dots) run at 30 fps,
             // which looks the same and costs half the CPU.
@@ -508,10 +524,9 @@ impl App {
                 subs.push(iced::time::every(Duration::from_millis(33)).map(|_| Message::Frame));
             }
         }
-        // Redraw often enough for the word highlight, only while synced lyrics are on screen.
+        // Redraw at 30 fps for the smooth scroll and word fill, only while synced lyrics are on screen.
         if self.page == Page::Lyrics && self.playing && self.lyrics.as_ref().is_some_and(|l| l.synced) {
-            let every = if self.config.lyrics.word_highlight { 90 } else { 250 };
-            subs.push(iced::time::every(Duration::from_millis(every)).map(|_| Message::Tick));
+            subs.push(iced::time::every(Duration::from_millis(33)).map(|_| Message::Tick));
         }
         Subscription::batch(subs)
     }
@@ -549,7 +564,8 @@ impl App {
         }
         self.cover_fx_for = url;
         let base = theme::resolve(&self.config.appearance);
-        self.lyrics_background = bytes.as_ref().and_then(|b| custom::blurred_cover(b, base.background));
+        self.lyrics_background = bytes.as_ref().and_then(|b| custom::blurred_cover(b, base.background, 0.5));
+        self.ambient = bytes.as_ref().and_then(|b| custom::blurred_cover(b, base.background, 0.55));
         self.cover_accent = bytes.as_ref().and_then(|b| theme::accent_from_image(b));
         self.refresh_theme();
     }
@@ -607,6 +623,29 @@ impl App {
             },
             move |r| Message::LyricsFound(id.clone(), r),
         )
+    }
+
+    /// A file dragged onto the window: a font is added, and an image becomes the cover of the
+    /// playlist on screen, or the app icon from Settings or the setup.
+    fn file_dropped(&mut self, path: PathBuf) -> Task<Message> {
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default().to_ascii_lowercase();
+        if ["ttf", "otf", "ttc"].contains(&ext.as_str()) {
+            return Task::done(Message::FontPicked(Some(path)));
+        }
+        if !custom::IMAGE_TYPES.contains(&ext.as_str()) {
+            self.notify("Haze can use PNG, JPEG, WebP, GIF, BMP, ICO, TIFF, TGA and QOI images, and TTF or OTF fonts.", true);
+            return Task::none();
+        }
+        match &self.page {
+            _ if self.setup.is_some() => Task::done(Message::IconPicked(Some(path))),
+            Page::Settings => Task::done(Message::IconPicked(Some(path))),
+            Page::Liked => Task::done(Message::CoverPicked("liked".into(), Some(path))),
+            Page::Playlist(p) => Task::done(Message::CoverPicked(p.id.clone(), Some(path))),
+            _ => {
+                self.notify("Drop an image on a playlist to make it the cover, or on Settings to make it the app icon.", false);
+                Task::none()
+            }
+        }
     }
 
     fn apply_icon(&mut self) -> Task<Message> {
@@ -736,7 +775,24 @@ impl App {
             }
             Page::Playlist(p) => {
                 let id = p.id.clone();
-                Some(Task::perform(async move { api.playlist_tracks(&id).await.map_err(err) }, {
+                let audio = self.audio.clone();
+                let settings = self.config.playback.clone();
+                let load = async move {
+                    match api.playlist_tracks(&id, None).await {
+                        Ok(tracks) => Ok(tracks),
+                        // Developer apps can't read some playlists (Spotify's own, and some other
+                        // people's), so read it with the playback login instead.
+                        Err(e) if e.to_string().contains("403") => {
+                            let Some(audio) = audio else { return Err(e) };
+                            let token = audio.web_token(&settings).await?;
+                            api.playlist_tracks(&id, Some(&token)).await.map_err(|_| {
+                                anyhow::anyhow!("Spotify won't let Haze open this playlist. Try saving its songs to a playlist of your own.")
+                            })
+                        }
+                        Err(e) => Err(e),
+                    }
+                };
+                Some(Task::perform(async move { load.await.map_err(err) }, {
                     let page = page.clone();
                     move |r| Message::Tracks(page.clone(), r)
                 }))
@@ -1194,9 +1250,18 @@ impl App {
                 }
             }
 
-            Message::Edit(edit) => self.apply_edit(edit),
+            Message::Edit(edit) => {
+                self.apply_edit(edit);
+                // Picks up a change of lyrics provider (a no-op when the lyrics are current).
+                if self.page == Page::Lyrics {
+                    return self.fetch_lyrics();
+                }
+            }
             Message::PickIcon => {
-                return Task::perform(custom::pick_image("Choose an app icon"), Message::IconPicked);
+                return Task::perform(custom::pick_image("Choose an app icon"), |r| match r {
+                    Ok(path) => Message::IconPicked(path),
+                    Err(e) => Message::PickFailed(e),
+                });
             }
             Message::IconPicked(None) | Message::CoverPicked(_, None) | Message::FontPicked(None) => {}
             Message::IconPicked(Some(path)) => match custom::import_image(&path, "icons", "icon", 512) {
@@ -1227,7 +1292,10 @@ impl App {
             Message::PickCover(key) => {
                 return Task::perform(
                     async move { (key, custom::pick_image("Choose a cover").await) },
-                    |(key, path)| Message::CoverPicked(key, path),
+                    |(key, r)| match r {
+                        Ok(path) => Message::CoverPicked(key, path),
+                        Err(e) => Message::PickFailed(e),
+                    },
                 );
             }
             Message::CoverPicked(key, Some(path)) => match custom::import_image(&path, "covers", &key, 640) {
@@ -1245,7 +1313,14 @@ impl App {
                     self.save_quietly();
                 }
             }
-            Message::PickFont => return Task::perform(custom::pick_font(), Message::FontPicked),
+            Message::PickFont => {
+                return Task::perform(custom::pick_font(), |r| match r {
+                    Ok(path) => Message::FontPicked(path),
+                    Err(e) => Message::PickFailed(e),
+                });
+            }
+            Message::PickFailed(e) => self.notify(e, true),
+            Message::FileDropped(path) => return self.file_dropped(path),
             Message::FontPicked(Some(path)) => {
                 let added = std::fs::read(&path).map_err(anyhow::Error::from).and_then(|bytes| {
                     let family = custom::font_family(&bytes).ok_or_else(|| anyhow::anyhow!("not a font file"))?;
@@ -1405,11 +1480,17 @@ impl App {
             Compact(v) => a.compact = v,
             AlbumArt(v) => a.show_album_art = v,
             AccentFromCover(v) => a.accent_from_cover = v,
+            AmbientBackground(v) => a.ambient_background = v,
             AppFont(s) => a.font_family = font_name(s),
             LyricsFont(s) => ly.font_family = font_name(s),
             WordHighlight(v) => ly.word_highlight = v,
             BlurredBackground(v) => ly.blurred_background = v,
             LyricsAlign(v) => ly.align = v,
+            LyricsProvider(p) => {
+                ly.sources = p.sources();
+                // Look the song up again with the new provider.
+                self.lyrics_for = None;
+            }
             LyricsSize(v) => ly.font_size = v,
             LyricsOffset(v) => ly.offset_ms = v as i32,
             LinesBefore(v) => ly.lines_before = v as usize,

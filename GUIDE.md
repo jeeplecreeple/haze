@@ -210,18 +210,24 @@ through Ollama or LM Studio are free.
 Click the microphone in the player bar, **Lyrics** in the sidebar, or press `Ctrl+L`. Do it again to
 go back to where you were.
 
-- The line being sung is big and bright, and each word lights up as it's sung.
+- The line being sung is big and bright, each word lights up as it's sung, and a soft shine rides
+  along the edge of the fill. When a new line starts, the lines glide up instead of jumping.
 - Click any line to jump the song to it.
 - Long instrumental breaks show three dots that fill up until the singing starts again.
 - **Full screen** hides everything except the lyrics and the player bar. `Esc` leaves it.
 
 Haze asks Spotify for lyrics first and then [LRCLIB](https://lrclib.net), a free community
-database, so songs Spotify has no lyrics for often still get them. When only plain lyrics exist,
-they're shown without the highlight.
+database, so songs Spotify has no lyrics for often still get them. **Lyrics provider** in
+**Settings → Lyrics** changes the order, or sticks to one of them. LRCLIB's timed lyrics are only
+used when they're for a recording of the same length, so a live or extended version doesn't throw
+the timing off; otherwise you get its plain lyrics. When only plain lyrics exist, they're shown
+without the highlight.
 
-**Settings → Lyrics** has the options: word-by-word highlight, the blurred cover background, left
-or centred lines, the lyrics font and size, how many past lines stay on screen, and a timing offset
-for lyrics that run early or late.
+The timing allows for the half second of sound your speakers are still to play, so lines light up
+as you hear them. If a song still runs early or late, use **Timing offset**.
+
+**Settings → Lyrics** also has: word-by-word highlight, the blurred cover background, left or
+centred lines, the lyrics font and size, and how many past lines stay on screen.
 
 ## 7. Make it yours
 
@@ -270,7 +276,9 @@ accent = "#0a84ff"
 ```
 
 It then shows up in the **Theme** list as `ocean`. Turn on **Accent from cover art** to have the
-accent colour follow whatever is playing.
+accent colour follow whatever is playing. **Cover glow background** (on by default) puts a blurred,
+darkened copy of the current song's cover behind the whole window, so its colours show around and
+through the panels.
 
 ### Your own fonts
 
@@ -284,7 +292,9 @@ name under **…or an installed font**.
 ### Your app icon
 
 **Settings → Appearance → App icon** has eight built-in icons to pick from (the setup offers them
-too), and **Use your own image…** takes a PNG or JPG; square works best. The icon changes in the
+too), and **Use your own image…** takes PNG, JPEG, WebP, GIF, BMP, ICO, TIFF, TGA or QOI; square
+works best. Haze reads the file itself, so a WebP saved with a .png name still works. You can also
+drag an image onto the Haze window while Settings is open. The icon changes in the
 window, the taskbar and the logo in the sidebar straight away. On Linux, Haze also writes a menu
 entry (`~/.local/share/applications/haze.desktop`) so your launcher and dock use it too. On macOS this
 only changes the window icon: to change the Dock icon, select Haze.app in Finder, choose
@@ -304,8 +314,9 @@ which also has **Check now**). When there is one, a strip across the top offers 
 
 ### Your own playlist covers
 
-Open a playlist or Liked Songs and click **Change cover…** to use any image as its cover. This only
-changes it in Haze, not on Spotify. **Reset cover** brings Spotify's back.
+Open a playlist or Liked Songs and click **Change cover…** to use any image as its cover, or drag
+an image onto the window while the playlist is open. This only changes it in Haze, not on Spotify.
+**Reset cover** brings Spotify's back.
 
 ## 8. Keyboard shortcuts
 
@@ -335,8 +346,9 @@ You can change any of them under `[keys]` in the config file.
 | Spotify returns 403 for your account | Your Spotify app is in development mode, which only allows accounts listed under **User Management** on the dashboard. Add your account's email there. |
 | "No API key for the DJ" | Add the key in Settings, or set the environment variable from [the table above](#add-an-api-key) and restart. |
 | The DJ says its picks couldn't be found | The model named songs Spotify doesn't have. Try again, or use a larger model. |
-| No spoken intros on Linux | Install `espeak-ng` or `speech-dispatcher`, or switch to OpenAI-compatible TTS. |
-| **Choose image…** or **Add font file…** does nothing (Linux) | The file picker comes from your desktop's portal. GNOME and KDE have one; elsewhere install `xdg-desktop-portal` and a backend such as `xdg-desktop-portal-gtk`. |
+| No spoken intros on Linux | Haze says so once and the DJ talks on screen instead. Install `espeak-ng` (`sudo pacman -S espeak-ng` on Arch) or `speech-dispatcher`, or switch to OpenAI-compatible TTS. |
+| "Haze couldn't open a file picker" (Linux) | The file picker comes from your desktop's portal. GNOME and KDE have one; elsewhere (Hyprland, Sway, i3) install `xdg-desktop-portal-gtk`, or `zenity`. Until then, drag the file onto the Haze window. |
+| A playlist says Spotify won't let Haze open it | Spotify blocks developer apps from some playlists (its own mixes, and some made by other people). Haze retries with its playback login, which usually works; if it doesn't, save the songs to a playlist of your own. |
 | No lyrics for a song | Neither Spotify nor LRCLIB has them. For lyrics that run early or late, use **Timing offset** in Settings → Lyrics. |
 | `fatal: not a git repository` | Run `cd ~/haze` first, then try again. |
 | `can't find crate` while building on Arch | Build with `makepkg -Csi`, which starts fresh. |

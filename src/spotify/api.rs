@@ -57,9 +57,17 @@ impl Api {
     }
 
     async fn get<T: DeserializeOwned>(&self, url: &str) -> Result<T> {
+        self.get_as(url, None).await
+    }
+
+    /// GET with your login, or with `token` when one is given.
+    async fn get_as<T: DeserializeOwned>(&self, url: &str, token: Option<&str>) -> Result<T> {
         let url = if url.starts_with("http") { url.to_string() } else { format!("{BASE}{url}") };
         for attempt in 0..3 {
-            let token = self.auth.access_token().await?;
+            let token = match token {
+                Some(t) => t.to_string(),
+                None => self.auth.access_token().await?,
+            };
             let resp = self.http.request(Method::GET, &url).bearer_auth(token).send().await?;
             match resp.status() {
                 StatusCode::TOO_MANY_REQUESTS if attempt < 2 => {
@@ -111,24 +119,26 @@ impl Api {
         Ok(out)
     }
 
-    pub async fn playlist_tracks(&self, playlist_id: &str) -> Result<Vec<Track>> {
+    /// A playlist's songs. `token` reads it with another login (see `Audio::web_token`), for
+    /// playlists Spotify won't show to your developer app.
+    pub async fn playlist_tracks(&self, playlist_id: &str, token: Option<&str>) -> Result<Vec<Track>> {
         let id = urlencoding::encode(playlist_id);
         // Newer API versions serve playlist contents under /items; older ones under /tracks.
-        match self.paged_tracks(format!("/playlists/{id}/items?limit=50")).await {
+        match self.paged_tracks(format!("/playlists/{id}/items?limit=50"), token).await {
             Ok(tracks) => Ok(tracks),
-            Err(_) => self.paged_tracks(format!("/playlists/{id}/tracks?limit=50")).await,
+            Err(_) => self.paged_tracks(format!("/playlists/{id}/tracks?limit=50"), token).await,
         }
     }
 
     pub async fn liked_tracks(&self) -> Result<Vec<Track>> {
-        self.paged_tracks("/me/tracks?limit=50".into()).await
+        self.paged_tracks("/me/tracks?limit=50".into(), None).await
     }
 
-    async fn paged_tracks(&self, first: String) -> Result<Vec<Track>> {
+    async fn paged_tracks(&self, first: String, token: Option<&str>) -> Result<Vec<Track>> {
         let mut out = Vec::new();
         let mut next = Some(first);
         while let Some(url) = next.take() {
-            let page: Page<SavedItem> = self.get(&url).await?;
+            let page: Page<SavedItem> = self.get_as(&url, token).await?;
             out.extend(page.items.into_iter().filter_map(|i| i.track.or(i.item)).filter_map(RawTrack::into_track));
             if out.len() < MAX_LIST {
                 next = page.next;

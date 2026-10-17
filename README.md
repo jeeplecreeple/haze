@@ -12,12 +12,13 @@ that runs on **your own** LLM API key.
 - **Bring your own model.** OpenAI, Anthropic Claude, Google Gemini, and anything OpenAI-compatible:
   OpenRouter, Groq, Mistral, DeepSeek, xAI, Together, or a local Ollama / LM Studio.
 - **Synced lyrics.** A karaoke-style lyrics view in the spirit of Spicy Lyrics: words light up as
-  they're sung, a blurred cover-art background, instrumental-break dots, click a line to jump there,
-  full screen. Lyrics come from Spotify, with [LRCLIB](https://lrclib.net) as a fallback.
+  they're sung with a shine on the edge, lines glide into place, a blurred cover-art background,
+  instrumental-break dots, click a line to jump there, full screen. Lyrics come from Spotify and
+  [LRCLIB](https://lrclib.net), in the order you pick.
 - **Updates itself.** Checks GitHub for new versions and, outside a package manager, installs them
   with one click.
-- **Looks the part.** Rounded panels, Inter type and Lucide icons built in, so it looks the same on
-  Linux, Windows and macOS.
+- **Looks the part.** Glassy panels over a glow of the current song's cover, Inter type and Lucide
+  icons built in, so it looks the same on Linux, Windows and macOS.
 - **Customisable.** Themes (including Apple Music light and dark) or your own theme files, colours,
   an accent that follows the cover art, your own fonts, eight built-in app icons or your own, your own playlist
   covers, corner radius, compact rows, which side the sidebar and queue sit on, player bar on top or

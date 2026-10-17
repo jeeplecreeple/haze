@@ -1,6 +1,6 @@
 [package]
 name = "haze"
-version = "0.3.2"
+version = "0.4.0"
 edition = "2024"
 description = "A native, lightweight, heavily customisable Spotify client with an AI DJ"
 license = "MIT"
@@ -21,7 +21,7 @@ urlencoding = "2"
 
 # UI: iced is a pure-Rust native toolkit (wgpu, with a CPU tiny-skia fallback). No webview.
 iced = { version = "0.14", features = ["tokio", "image-without-codecs"] }
-image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp", "ico", "tiff", "tga", "qoi"] }
 # Reads family names out of font files you add.
 ttf-parser = { version = "0.25", default-features = false, features = ["std"] }
 

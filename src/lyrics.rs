@@ -60,11 +60,13 @@ fn build_lines(raw: Vec<(u32, String)>, track_ms: u32) -> Vec<Line> {
     lines
 }
 
-/// Spreads a line's time over its words in proportion to their length.
+/// Spreads a line's time over its words in proportion to their length. Lines followed by a pause
+/// would otherwise crawl, so the words take at most about as long as singing them would.
 fn estimate_words(text: &str, start: u32, end: u32) -> Vec<Word> {
     let parts: Vec<&str> = text.split_whitespace().collect();
     let total: usize = parts.iter().map(|p| p.chars().count() + 1).sum();
-    let span = (end - start) as f32 * 0.9; // leave a short breath before the next line
+    let sung = total as f32 * 95.0 + 500.0;
+    let span = ((end - start) as f32 * 0.9).min(sung); // leave a short breath before the next line
     let mut t = start as f32;
     parts
         .into_iter()
@@ -200,12 +202,14 @@ pub async fn lrclib(track: &Track) -> Result<Option<Lyrics>> {
     struct Hit {
         synced_lyrics: Option<String>,
         plain_lyrics: Option<String>,
+        duration: Option<f64>,
     }
     let http = reqwest::Client::builder()
         .user_agent(concat!("haze/", env!("CARGO_PKG_VERSION"), " (https://github.com/jeeplecreeple/haze)"))
         .timeout(Duration::from_secs(10))
         .build()?;
     let artist = track.artists.first().map(String::as_str).unwrap_or_default();
+    let secs = track.duration_ms as f64 / 1000.0;
     let url = format!(
         "https://lrclib.net/api/get?track_name={}&artist_name={}&album_name={}&duration={}",
         urlencoding::encode(&track.name),
@@ -224,8 +228,18 @@ pub async fn lrclib(track: &Track) -> Result<Option<Lyrics>> {
             urlencoding::encode(artist)
         );
         let mut hits: Vec<Hit> = http.get(&url).send().await?.error_for_status()?.json().await?;
-        let best = hits.iter().position(|h| h.synced_lyrics.is_some()).unwrap_or(0);
-        (!hits.is_empty()).then(|| hits.swap_remove(best))
+        // Synced lyrics only line up with the same recording, so the length has to match;
+        // a live or extended version keeps just its plain lyrics.
+        let same_length = |h: &Hit| h.duration.is_some_and(|d| (d - secs).abs() <= 3.0);
+        let best = hits
+            .iter()
+            .filter(|h| h.synced_lyrics.is_some() && same_length(h))
+            .min_by(|a, b| (a.duration.unwrap_or(0.0) - secs).abs().total_cmp(&(b.duration.unwrap_or(0.0) - secs).abs()))
+            .map(|h| hits.iter().position(|x| std::ptr::eq(x, h)).unwrap_or(0));
+        match best {
+            Some(i) => Some(hits.swap_remove(i)),
+            None => hits.into_iter().find(|h| h.plain_lyrics.is_some()).map(|h| Hit { synced_lyrics: None, ..h }),
+        }
     };
     Ok(hit.and_then(|h| {
         h.synced_lyrics
@@ -266,6 +280,15 @@ mod tests {
         let w = &l.lines[0].words;
         assert_eq!(w.len(), 2);
         assert!(w[0].start_ms == 1_000 && w[1].end_ms <= l.lines[0].end_ms);
+    }
+
+    #[test]
+    fn estimated_words_dont_crawl_through_a_pause() {
+        // A short line followed by eight seconds of nothing is still sung in a couple of seconds.
+        let lrc = "[00:01.00]Hello there\n[00:09.00]Next";
+        let l = parse_lrc(&track(), lrc, "test").unwrap();
+        let last = l.lines[0].words.last().unwrap();
+        assert!(last.end_ms < 3_000, "ends at {}", last.end_ms);
     }
 
     #[test]

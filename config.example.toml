@@ -25,6 +25,7 @@ font_family = ""          # empty = the built-in Inter; "system" = your system f
 font_files = []           # extra .ttf/.otf files to load from anywhere
 app_icon = ""             # haze (empty), sunset, ocean, mint, midnight, mono, aurora, ember, or a PNG/JPG file
 accent_from_cover = false # tint the accent colour from the playing song's cover art
+ambient_background = true # a blurred glow of the playing song's cover behind the whole window
 corner_radius = 8.0
 show_album_art = true
 compact = false           # denser track rows

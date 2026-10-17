@@ -29,10 +29,26 @@ pub fn tint(colors: Colors, t: f32) -> Color {
 }
 
 pub fn panel(colors: Colors, radius: f32) -> impl Fn(&Theme) -> container::Style {
+    glass(colors, radius, 1.0)
+}
+
+/// A panel that lets the window's ambient cover colours show through (`opacity` below 1), with a
+/// hairline edge and a soft drop shadow so it floats over the background.
+pub fn glass(colors: Colors, radius: f32, opacity: f32) -> impl Fn(&Theme) -> container::Style {
     move |_| container::Style {
-        background: Some(Background::Color(colors.surface)),
+        background: Some(Background::Color(alpha(colors.surface, opacity))),
         text_color: Some(colors.text),
+        border: Border { radius: radius.into(), width: 1.0, color: alpha(colors.text, 0.06) },
+        shadow: Shadow { color: alpha(Color::BLACK, 0.28), offset: Vector::new(0.0, 6.0), blur_radius: 22.0 },
+        ..container::Style::default()
+    }
+}
+
+/// A soft shadow under cover art.
+pub fn art_shadow(radius: f32) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style {
         border: Border { radius: radius.into(), ..Border::default() },
+        shadow: Shadow { color: alpha(Color::BLACK, 0.45), offset: Vector::new(0.0, 10.0), blur_radius: 28.0 },
         ..container::Style::default()
     }
 }
@@ -40,10 +56,25 @@ pub fn panel(colors: Colors, radius: f32) -> impl Fn(&Theme) -> container::Style
 /// A slightly raised block inside a panel, for settings groups and DJ messages.
 pub fn card(colors: Colors, radius: f32) -> impl Fn(&Theme) -> container::Style {
     move |_| container::Style {
-        background: Some(Background::Color(tint(colors, 0.04))),
+        background: Some(Background::Color(alpha(colors.text, 0.045))),
         text_color: Some(colors.text),
-        border: Border { radius: radius.into(), ..Border::default() },
+        border: Border { radius: radius.into(), width: 1.0, color: alpha(colors.text, 0.05) },
         ..container::Style::default()
+    }
+}
+
+/// A card washed with the accent colour, for what's playing now.
+pub fn accent_card(colors: Colors, radius: f32) -> impl Fn(&Theme) -> container::Style {
+    move |_| {
+        let gradient = gradient::Linear::new(Radians(std::f32::consts::FRAC_PI_2))
+            .add_stop(0.0, alpha(colors.accent, 0.22))
+            .add_stop(1.0, alpha(colors.accent, 0.04));
+        container::Style {
+            background: Some(Background::Gradient(Gradient::Linear(gradient))),
+            text_color: Some(colors.text),
+            border: Border { radius: radius.into(), width: 1.0, color: alpha(colors.accent, 0.18) },
+            ..container::Style::default()
+        }
     }
 }
 
@@ -57,13 +88,30 @@ pub fn tile(color: Color, radius: f32) -> impl Fn(&Theme) -> container::Style {
     }
 }
 
+/// A glossy accent block, for covers without a picture (Liked Songs).
+pub fn gradient_tile(colors: Colors, radius: f32) -> impl Fn(&Theme) -> container::Style {
+    move |_| {
+        let gradient = gradient::Linear::new(Radians(2.35))
+            .add_stop(0.0, mix(colors.accent, Color::WHITE, 0.22))
+            .add_stop(1.0, mix(colors.accent, Color::BLACK, 0.38));
+        container::Style {
+            background: Some(Background::Gradient(Gradient::Linear(gradient))),
+            text_color: Some(readable_on(colors.accent)),
+            border: Border { radius: radius.into(), ..Border::default() },
+            shadow: Shadow { color: alpha(Color::BLACK, 0.45), offset: Vector::new(0.0, 10.0), blur_radius: 28.0 },
+            ..container::Style::default()
+        }
+    }
+}
+
 /// The accent fading into the panel, behind page headers.
 pub fn hero(colors: Colors, radius: f32) -> impl Fn(&Theme) -> container::Style {
     move |_| {
-        let top = mix(colors.surface, colors.accent, 0.32);
-        let gradient = gradient::Linear::new(Radians(std::f32::consts::PI))
-            .add_stop(0.0, top)
-            .add_stop(1.0, colors.surface);
+        // A diagonal wash: strong accent in the top corner, a hint of it in the middle, then the panel.
+        let gradient = gradient::Linear::new(Radians(2.6))
+            .add_stop(0.0, mix(colors.surface, colors.accent, 0.5))
+            .add_stop(0.45, mix(colors.surface, colors.accent, 0.18))
+            .add_stop(1.0, alpha(colors.surface, 0.0));
         container::Style {
             background: Some(Background::Gradient(Gradient::Linear(gradient))),
             text_color: Some(colors.text),
@@ -73,12 +121,24 @@ pub fn hero(colors: Colors, radius: f32) -> impl Fn(&Theme) -> container::Style 
     }
 }
 
+/// The window background: the theme's background with a faint glow of the accent in one corner.
 pub fn page(colors: Colors) -> impl Fn(&Theme) -> container::Style {
-    move |_| container::Style {
-        background: Some(Background::Color(colors.background)),
-        text_color: Some(colors.text),
-        ..container::Style::default()
+    move |_| {
+        let gradient = gradient::Linear::new(Radians(2.4))
+            .add_stop(0.0, mix(colors.background, colors.accent, 0.12))
+            .add_stop(0.55, colors.background)
+            .add_stop(1.0, mix(colors.background, colors.accent, 0.04));
+        container::Style {
+            background: Some(Background::Gradient(Gradient::Linear(gradient))),
+            text_color: Some(colors.text),
+            ..container::Style::default()
+        }
     }
+}
+
+/// See-through, for the window over the ambient cover background.
+pub fn clear(colors: Colors) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style { text_color: Some(colors.text), ..container::Style::default() }
 }
 
 pub fn banner(colors: Colors, radius: f32, error: bool) -> impl Fn(&Theme) -> container::Style {
@@ -99,9 +159,9 @@ pub fn nav(colors: Colors, radius: f32, selected: bool) -> impl Fn(&Theme, butto
     move |_, status| {
         let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
         let bg = if selected {
-            Some(tint(colors, 0.1))
+            Some(alpha(colors.accent, if hovered { 0.24 } else { 0.18 }))
         } else if hovered {
-            Some(tint(colors, 0.05))
+            Some(alpha(colors.text, 0.06))
         } else {
             None
         };
@@ -118,9 +178,10 @@ pub fn nav(colors: Colors, radius: f32, selected: bool) -> impl Fn(&Theme, butto
 pub fn row(colors: Colors, radius: f32, selected: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
     move |_, status| {
         let bg = match status {
-            button::Status::Hovered => Some(tint(colors, 0.06)),
-            button::Status::Pressed => Some(tint(colors, 0.1)),
-            _ if selected => Some(tint(colors, 0.035)),
+            button::Status::Hovered if selected => Some(alpha(colors.accent, 0.18)),
+            button::Status::Hovered => Some(alpha(colors.text, 0.06)),
+            button::Status::Pressed => Some(alpha(colors.text, 0.1)),
+            _ if selected => Some(alpha(colors.accent, 0.12)),
             _ => None,
         };
         button::Style {
@@ -145,7 +206,7 @@ pub fn primary(colors: Colors, radius: f32) -> impl Fn(&Theme, button::Status) -
             background: Some(Background::Color(bg)),
             text_color: readable_on(colors.accent),
             border: Border { radius: radius.into(), ..Border::default() },
-            shadow: Shadow { color: alpha(Color::BLACK, 0.25), offset: Vector::new(0.0, 2.0), blur_radius: 8.0 },
+            shadow: Shadow { color: alpha(colors.accent, 0.35), offset: Vector::new(0.0, 4.0), blur_radius: 14.0 },
             ..button::Style::default()
         }
     }
@@ -187,19 +248,21 @@ pub fn icon_button(colors: Colors, active: bool) -> impl Fn(&Theme, button::Stat
     }
 }
 
-/// The round play/pause button: text colour on the background colour, like a light switch.
+/// The round play/pause button: the accent colour, glowing a little.
 pub fn play_button(colors: Colors) -> impl Fn(&Theme, button::Status) -> button::Style {
     move |_, status| {
         let bg = match status {
-            button::Status::Hovered => mix(colors.text, colors.accent, 0.15),
-            button::Status::Pressed => mix(colors.text, colors.background, 0.2),
-            button::Status::Disabled => mix(colors.text, colors.surface, 0.6),
-            button::Status::Active => colors.text,
+            button::Status::Hovered => mix(colors.accent, Color::WHITE, 0.14),
+            button::Status::Pressed => mix(colors.accent, Color::BLACK, 0.12),
+            button::Status::Disabled => mix(colors.accent, colors.surface, 0.6),
+            button::Status::Active => colors.accent,
         };
+        let glow = if matches!(status, button::Status::Disabled) { 0.0 } else { 0.45 };
         button::Style {
             background: Some(Background::Color(bg)),
-            text_color: colors.background,
+            text_color: readable_on(colors.accent),
             border: Border { radius: 999.0.into(), ..Border::default() },
+            shadow: Shadow { color: alpha(colors.accent, glow), offset: Vector::new(0.0, 3.0), blur_radius: 16.0 },
             ..button::Style::default()
         }
     }
@@ -228,11 +291,11 @@ pub fn seek_slider(colors: Colors) -> impl Fn(&Theme, slider::Status) -> slider:
         slider::Style {
             rail: slider::Rail {
                 backgrounds: (
-                    Background::Color(if active { colors.accent } else { colors.text }),
-                    Background::Color(tint(colors, 0.2)),
+                    Background::Color(if active { mix(colors.accent, Color::WHITE, 0.15) } else { colors.accent }),
+                    Background::Color(alpha(colors.text, 0.16)),
                 ),
-                width: 4.0,
-                border: Border { radius: 2.0.into(), ..Border::default() },
+                width: 5.0,
+                border: Border { radius: 2.5.into(), ..Border::default() },
             },
             handle: slider::Handle {
                 shape: slider::HandleShape::Circle { radius: if active { 6.0 } else { 0.0 } },

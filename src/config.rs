@@ -200,6 +200,8 @@ pub struct Appearance {
     pub app_icon: String,
     /// Tint the accent colour from the current song's cover art.
     pub accent_from_cover: bool,
+    /// A blurred glow of the current song's cover behind the whole window.
+    pub ambient_background: bool,
     pub corner_radius: f32,
     pub show_album_art: bool,
     /// Compact rows fit more tracks on screen.
@@ -220,6 +222,7 @@ impl Default for Appearance {
             font_files: Vec::new(),
             app_icon: String::new(),
             accent_from_cover: false,
+            ambient_background: true,
             corner_radius: 8.0,
             show_album_art: true,
             compact: false,
@@ -246,6 +249,46 @@ impl std::fmt::Display for LyricsAlign {
         f.write_str(match self {
             LyricsAlign::Left => "Left",
             LyricsAlign::Center => "Centre",
+        })
+    }
+}
+
+/// The choices for `lyrics.sources` in Settings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LyricsProvider {
+    SpotifyFirst,
+    LrclibFirst,
+    SpotifyOnly,
+    LrclibOnly,
+}
+
+impl LyricsProvider {
+    pub const ALL: [LyricsProvider; 4] = [Self::SpotifyFirst, Self::LrclibFirst, Self::SpotifyOnly, Self::LrclibOnly];
+
+    pub fn sources(self) -> Vec<String> {
+        let list: &[&str] = match self {
+            Self::SpotifyFirst => &["spotify", "lrclib"],
+            Self::LrclibFirst => &["lrclib", "spotify"],
+            Self::SpotifyOnly => &["spotify"],
+            Self::LrclibOnly => &["lrclib"],
+        };
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// The choice matching a config's `sources`, if it's one of these.
+    pub fn of(sources: &[String]) -> Option<Self> {
+        let lower: Vec<String> = sources.iter().map(|s| s.trim().to_ascii_lowercase()).collect();
+        Self::ALL.into_iter().find(|p| p.sources() == lower)
+    }
+}
+
+impl std::fmt::Display for LyricsProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::SpotifyFirst => "Spotify, then LRCLIB",
+            Self::LrclibFirst => "LRCLIB, then Spotify",
+            Self::SpotifyOnly => "Spotify only",
+            Self::LrclibOnly => "LRCLIB only",
         })
     }
 }
@@ -611,6 +654,15 @@ pub fn non_empty(s: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lyrics_provider_matches_its_sources() {
+        for p in LyricsProvider::ALL {
+            assert_eq!(LyricsProvider::of(&p.sources()), Some(p));
+        }
+        assert_eq!(LyricsProvider::of(&["Spotify".into(), " LRCLIB".into()]), Some(LyricsProvider::SpotifyFirst));
+        assert_eq!(LyricsProvider::of(&["genius".into()]), None);
+    }
 
     #[test]
     fn remembers_the_finished_setup() {

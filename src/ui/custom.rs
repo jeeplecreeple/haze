@@ -55,7 +55,12 @@ pub fn window_icon(app_icon: &str) -> Option<window::Icon> {
 /// Copies a picked image into the config folder as a PNG no larger than `max` pixels, so it keeps
 /// working if the original moves. A fresh file name each time keeps iced from showing a cached copy.
 pub fn import_image(from: &Path, folder: &str, stem: &str, max: u32) -> Result<PathBuf> {
-    let img = ::image::open(from).with_context(|| format!("couldn't read {}", from.display()))?;
+    // Read by content, not the file name, so a WebP saved as .png still works.
+    let img = ::image::ImageReader::open(from)
+        .and_then(|r| r.with_guessed_format())
+        .with_context(|| format!("couldn't open {}", from.display()))?
+        .decode()
+        .with_context(|| format!("{} isn't an image Haze can read", from.display()))?;
     let img = if img.width() > max || img.height() > max { img.thumbnail(max, max) } else { img };
     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     let safe: String = stem.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
@@ -74,22 +79,50 @@ pub fn remove_imported(path: &str, folder: &str) {
     }
 }
 
-pub async fn pick_image(title: &str) -> Option<PathBuf> {
-    rfd::AsyncFileDialog::new()
-        .set_title(title)
-        .add_filter("Images", &["png", "jpg", "jpeg"])
-        .pick_file()
-        .await
-        .map(|f| f.path().to_path_buf())
+pub const IMAGE_TYPES: [&str; 11] = ["png", "jpg", "jpeg", "webp", "gif", "bmp", "ico", "tif", "tiff", "tga", "qoi"];
+
+pub async fn pick_image(title: &str) -> Result<Option<PathBuf>, String> {
+    pick_file(title, "Images", &IMAGE_TYPES).await
 }
 
-pub async fn pick_font() -> Option<PathBuf> {
-    rfd::AsyncFileDialog::new()
-        .set_title("Add a font")
-        .add_filter("Fonts", &["ttf", "otf", "ttc"])
-        .pick_file()
-        .await
-        .map(|f| f.path().to_path_buf())
+pub async fn pick_font() -> Result<Option<PathBuf>, String> {
+    pick_file("Add a font", "Fonts", &["ttf", "otf", "ttc"]).await
+}
+
+/// Shows a file picker. `Ok(None)` means you cancelled it.
+async fn pick_file(title: &str, kind: &str, types: &[&str]) -> Result<Option<PathBuf>, String> {
+    let asked = std::time::Instant::now();
+    let picked = rfd::AsyncFileDialog::new().set_title(title).add_filter(kind, types).pick_file().await;
+    if let Some(file) = picked {
+        return Ok(Some(file.path().to_path_buf()));
+    }
+    // Cancelling takes a person a moment. A quick "nothing" usually means the desktop has no
+    // file-picker portal (common on tiling window managers); rfd then tries zenity by itself.
+    if !cfg!(target_os = "linux") || asked.elapsed() > std::time::Duration::from_millis(1500) {
+        return Ok(None);
+    }
+    if on_path("kdialog") {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
+        let patterns = types.iter().map(|t| format!("*.{t}")).collect::<Vec<_>>().join(" ");
+        if let Ok(out) = tokio::process::Command::new("kdialog")
+            .args(["--title", title, "--getopenfilename", &home, &format!("{patterns}|{kind}")])
+            .output()
+            .await
+        {
+            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            return Ok((out.status.success() && !path.is_empty()).then(|| PathBuf::from(path)));
+        }
+    }
+    if on_path("zenity") {
+        return Ok(None); // zenity was shown and you closed it
+    }
+    Err("Haze couldn't open a file picker on this desktop. Drag the file onto the Haze window instead, \
+        or install xdg-desktop-portal-gtk (or zenity) to get one."
+        .into())
+}
+
+fn on_path(program: &str) -> bool {
+    std::env::var_os("PATH").is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(program).is_file()))
 }
 
 const MENU_ENTRY_MARK: &str = "# Written by Haze for your custom icon.";
@@ -254,7 +287,8 @@ pub fn font(name: &str) -> iced::Font {
 }
 
 /// A tiny, blurred copy of the cover tinted toward the page colour, stretched behind the lyrics.
-pub fn blurred_cover(bytes: &[u8], toward: Color) -> Option<image::Handle> {
+/// A blurred copy of a cover, faded toward `toward`; `keep` is how much of the cover's own colour stays.
+pub fn blurred_cover(bytes: &[u8], toward: Color, keep: f32) -> Option<image::Handle> {
     let mut img = ::image::load_from_memory(bytes).ok()?.thumbnail(40, 40).to_rgba8();
     let tint = [toward.r, toward.g, toward.b].map(|c| c * 255.0);
     // Flatten any transparency onto the page colour first, so see-through corners don't go black.
@@ -268,7 +302,7 @@ pub fn blurred_cover(bytes: &[u8], toward: Color) -> Option<image::Handle> {
     let mut img = ::image::imageops::blur(&img, 4.0);
     for p in img.pixels_mut() {
         for (c, t) in p.0.iter_mut().zip(tint) {
-            *c = (*c as f32 * 0.4 + t * 0.6) as u8;
+            *c = (*c as f32 * keep + t * (1.0 - keep)) as u8;
         }
         p.0[3] = 255;
     }
@@ -307,7 +341,7 @@ mod tests {
 
     #[test]
     fn blurs_a_cover() {
-        let handle = blurred_cover(BUILTIN_ICON, Color::BLACK);
+        let handle = blurred_cover(BUILTIN_ICON, Color::BLACK, 0.4);
         assert!(matches!(handle, Some(image::Handle::Rgba { width: 40, height: 40, .. })));
     }
 }

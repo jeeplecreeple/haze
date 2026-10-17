@@ -8,7 +8,7 @@ use iced::{Alignment, ContentFit, Element, Fill, Font, Length, Padding, Shrink, 
 
 use super::icon::{self, icon};
 use super::{App, DEFAULT_FONT, Edit, Login, Message, Page, SYSTEM_FONT, SettingsTab, UpdateStatus, custom, style};
-use crate::config::{DjMode, Edge, LlmProvider, LyricsAlign, Side, TtsEngine, non_empty};
+use crate::config::{DjMode, Edge, LlmProvider, LyricsAlign, LyricsProvider, Side, TtsEngine, non_empty};
 use crate::lyrics::{Line, Lyrics};
 use crate::queue::{Origin, Repeat};
 use crate::spotify::api::{Playlist, Track};
@@ -37,6 +37,28 @@ impl App {
     /// Panels are a little rounder than the controls inside them.
     fn panel_r(&self) -> f32 {
         self.r() * 1.5
+    }
+
+    /// The blurred cover behind the window: the strong lyrics one on the lyrics page, otherwise
+    /// the ambient glow, when they're switched on and a song is playing.
+    fn backdrop(&self) -> Option<&image::Handle> {
+        let a = &self.config.appearance;
+        if !a.show_album_art || self.setup.is_some() || self.login != Login::LoggedIn || self.queue.current().is_none() {
+            return None;
+        }
+        if self.lyrics_backdrop() {
+            return self.lyrics_background.as_ref();
+        }
+        self.ambient.as_ref().filter(|_| a.ambient_background)
+    }
+
+    fn lyrics_backdrop(&self) -> bool {
+        self.page == Page::Lyrics && self.config.lyrics.blurred_background && self.lyrics_background.is_some()
+    }
+
+    /// The main panels: see-through over the cover glow, solid otherwise.
+    fn glass(&self) -> impl Fn(&iced::Theme) -> container::Style + use<> {
+        style::glass(self.colors, self.panel_r(), if self.backdrop().is_some() { 0.78 } else { 1.0 })
     }
 
     fn font(&self) -> Font {
@@ -146,7 +168,16 @@ impl App {
         {
             root = root.push(banner);
         }
-        container(root.push(content)).width(Fill).height(Fill).style(style::page(self.colors)).into()
+        let window = container(root.push(content)).width(Fill).height(Fill);
+        match self.backdrop() {
+            Some(glow) => stack![
+                container(image(glow.clone()).width(Fill).height(Fill).content_fit(ContentFit::Fill).filter_method(image::FilterMethod::Linear))
+                    .style(style::page(self.colors)),
+                window.style(style::clear(self.colors)),
+            ]
+            .into(),
+            None => window.style(style::page(self.colors)).into(),
+        }
     }
 
     /// The strip across the top that offers a new release and shows how installing it goes.
@@ -251,8 +282,13 @@ impl App {
             .height(Fill)
             .padding(if on_lyrics { 0.0 } else { 24.0 })
             .clip(true)
-            .style(style::panel(self.colors, self.panel_r()));
-        let bar = self.player_bar();
+            .style(if on_lyrics && self.lyrics_backdrop() {
+                // The lyrics float straight on the blurred cover that fills the window.
+                style::glass(self.colors, self.panel_r(), 0.0)
+            } else {
+                style::glass(self.colors, self.panel_r(), if self.backdrop().is_some() { 0.78 } else { 1.0 })
+            });
+        let bar = container(self.player_bar()).padding(GAP);
         if on_lyrics && self.fullscreen {
             return column![container(main).padding(Padding::new(GAP).bottom(0)).height(Fill), bar].into();
         }
@@ -277,8 +313,10 @@ impl App {
 
     fn nav<'a>(&self, glyph: char, label: &'a str, page: Page) -> El<'a> {
         let selected = self.page == page;
+        let glyph = icon(glyph, self.fs(1.15));
+        let glyph = if selected { glyph.color(self.colors.accent) } else { glyph };
         button(
-            row![icon(glyph, self.fs(1.15)), text(label).size(self.fs(1.0)).font(self.weight(font::Weight::Semibold))]
+            row![glyph, text(label).size(self.fs(1.0)).font(self.weight(font::Weight::Semibold))]
                 .spacing(12)
                 .align_y(Alignment::Center),
         )
@@ -373,7 +411,7 @@ impl App {
         .width(self.config.layout.sidebar_width)
         .height(Fill)
         .padding(10)
-        .style(style::panel(self.colors, self.panel_r()))
+        .style(self.glass())
         .into()
     }
 
@@ -524,7 +562,10 @@ impl App {
     fn cover(&self, track: Option<&Track>, size: f32) -> El<'_> {
         let handle = track.and_then(|t| t.image_url.as_deref()).and_then(|u| self.image(u));
         match (self.config.appearance.show_album_art, handle) {
-            (true, Some(h)) => image(h.clone()).width(size).height(size).content_fit(ContentFit::Cover).border_radius(self.r() * 0.75).into(),
+            (true, Some(h)) => {
+                let art = image(h.clone()).width(size).height(size).content_fit(ContentFit::Cover).border_radius(self.r() * 0.75);
+                if size >= 100.0 { container(art).style(style::art_shadow(self.r() * 0.75)).into() } else { art.into() }
+            }
             (true, None) => container(icon(icon::MUSIC, size * 0.4).color(self.colors.muted_text))
                 .center(size)
                 .style(style::tile(style::tint(self.colors, 0.08), self.r() * 0.75))
@@ -543,12 +584,14 @@ impl App {
     /// A playlist's (or Liked Songs') cover: yours if you set one, otherwise Spotify's.
     fn collection_cover(&self, key: &str, url: Option<&str>, size: f32) -> El<'_> {
         match self.collection_handle(key, url) {
-            Some(h) => image(h).width(size).height(size).content_fit(ContentFit::Cover).border_radius(self.r()).into(),
+            Some(h) => container(image(h).width(size).height(size).content_fit(ContentFit::Cover).border_radius(self.r()))
+                .style(style::art_shadow(self.r()))
+                .into(),
             None => {
                 let glyph = if key == "liked" { icon::HEART } else { icon::MUSIC };
                 container(icon(glyph, size * 0.36).color(style::readable_on(self.colors.accent)))
                     .center(size)
-                    .style(style::tile(style::mix(self.colors.accent, self.colors.surface, 0.25), self.r()))
+                    .style(style::gradient_tile(self.colors, self.r()))
                     .into()
             }
         }
@@ -610,18 +653,19 @@ impl App {
         };
         let content = responsive(move |size| {
             let wide = size.width >= 880.0;
+            let art = (size.width * 0.27).clamp(220.0, 380.0);
+            let lyrics_width = if wide { size.width - 88.0 - art - 48.0 } else { size.width - 48.0 };
             let body: El = match (current, lyrics) {
                 (None, _) => self.lyrics_message("Play a song to see its lyrics here."),
                 (Some(_), None) if self.lyrics_loading => self.lyrics_message("Looking for lyrics…"),
                 (Some(_), None) => self.lyrics_message("No lyrics for this song."),
-                (Some(_), Some(l)) if l.synced => self.synced_lyrics(l, align),
+                (Some(_), Some(l)) if l.synced => self.synced_lyrics(l, align, lyrics_width),
                 (Some(_), Some(l)) => self.plain_lyrics(l, align),
             };
             let name = current.map(|t| t.name.clone()).unwrap_or_else(|| "Lyrics".into());
             let artist = current.map(|t| t.artist_line()).unwrap_or_default();
             if wide {
                 // Cover and song on the left, lyrics on the right, like a full-screen lyrics view.
-                let art = (size.width * 0.27).clamp(220.0, 380.0);
                 let info = column![
                     self.cover(current, art),
                     Space::new().height(8),
@@ -658,21 +702,7 @@ impl App {
             }
         });
 
-        match (&self.lyrics_background, ly.blurred_background && self.config.appearance.show_album_art) {
-            (Some(bg), true) if current.is_some() => stack![
-                image(bg.clone())
-                    .width(Fill)
-                    .height(Fill)
-                    // Stretched rather than cropped: it's a blur, so the aspect ratio doesn't show,
-                    // and it stays inside the panel.
-                    .content_fit(ContentFit::Fill)
-                    .filter_method(image::FilterMethod::Linear)
-                    .border_radius(self.panel_r()),
-                content
-            ]
-            .into(),
-            _ => content.into(),
-        }
+        content.into()
     }
 
     fn lyrics_message(&self, message: &'static str) -> El<'_> {
@@ -697,12 +727,14 @@ impl App {
         self.scroll(container(lines).padding(Padding::from([24, 12]))).height(Fill).into()
     }
 
-    /// Karaoke-style lyrics: the line being sung is bright and fills in word by word (and letter by
-    /// letter inside the word being sung), lines further away fade out, and long instrumental
-    /// breaks show three dots that fill up until the singing starts again.
-    fn synced_lyrics(&self, l: &Lyrics, align: Alignment) -> El<'_> {
+    /// Karaoke-style lyrics: the line being sung is bright and fills in word by word, with a soft
+    /// shine on the edge of the fill. When a new line starts the lines glide up rather than jump,
+    /// lines further away fade out, and long instrumental breaks show three breathing dots that
+    /// fill up until the singing starts again.
+    fn synced_lyrics(&self, l: &Lyrics, align: Alignment, width: f32) -> El<'_> {
         let ly = &self.config.lyrics;
-        let pos = (self.live_position() as i64 - ly.offset_ms as i64).max(0) as u32;
+        let heard = self.live_position().saturating_sub(crate::player::OUTPUT_DELAY_MS);
+        let pos = (heard as i64 - ly.offset_ms as i64).max(0) as u32;
         let active = l.active_line(pos);
         let in_gap = active.is_none_or(|i| pos >= l.lines[i].end_ms);
         let first = active.map(|i| i.saturating_sub(ly.lines_before)).unwrap_or(0);
@@ -710,18 +742,35 @@ impl App {
         let size = ly.font_size;
         let font = self.lyrics_font();
         let faded = |alpha: f32| style::alpha(self.colors.text, alpha);
+        let spacing = size * 0.3;
+        let pad_y = size * 0.12;
 
-        let mut col = Column::new().spacing(size * 0.3).align_x(align).width(Fill);
-        col = col.push(Space::new().height(size * 1.2));
+        // The glide: right after a line starts, the line that just scrolled off still takes up
+        // (a shrinking share of) its height, so everything below moves up smoothly.
+        let mut glide = 0.0;
+        if let Some(a) = active.filter(|&a| a > 0 && first > (a - 1).saturating_sub(ly.lines_before)) {
+            let t = (pos.saturating_sub(l.lines[a].start_ms) as f32 / 420.0).min(1.0);
+            let eased = 1.0 - (1.0 - t).powi(3);
+            let gone = &l.lines[first - 1];
+            // Roughly how many rows the line wrapped to: bold display text averages ~0.56 em a letter.
+            let per_row = ((width - 28.0) / (size * 0.56)).max(8.0);
+            let rows = (gone.text().chars().count() as f32 / per_row).ceil().max(1.0);
+            glide = (1.0 - eased) * (rows * size * 1.3 + 2.0 * pad_y + spacing);
+        }
+
+        let mut col = Column::new().spacing(spacing).align_x(align).width(Fill);
+        col = col.push(Space::new().height(size * 1.2 + glide));
         for (i, line) in l.lines.iter().enumerate().skip(first).take(ly.lines_before + 8) {
             if i == next && in_gap {
                 let gap_start = active.map_or(0, |a| l.lines[a].end_ms);
                 if line.start_ms.saturating_sub(gap_start) >= 3_000 {
                     let progress = (pos - gap_start.min(pos)) as f32 / (line.start_ms - gap_start) as f32;
+                    let breath = 0.5 + 0.5 * (pos as f32 / 380.0).sin();
                     let dots: Vec<text::Span<'_, (), Font>> = (0..3)
                         .map(|d| {
                             let fill = (progress * 3.0 - d as f32).clamp(0.0, 1.0);
-                            span("●  ").color(faded(0.25 + 0.75 * fill))
+                            let glow = if fill > 0.0 && fill < 1.0 { 0.15 * breath } else { 0.0 };
+                            span("●  ").color(style::mix(faded(0.22 + 0.7 * fill), self.colors.accent, glow))
                         })
                         .collect();
                     col = col.push(container(rich_text(dots).size(size * 0.55).font(font)).padding([size * 0.25, 14.0]));
@@ -732,18 +781,18 @@ impl App {
                 self.active_line(line, pos, size, font, align)
             } else {
                 let past = active.is_some_and(|a| i <= a);
-                let alpha = if past { 0.3 - 0.04 * distance } else { 0.48 - 0.06 * distance };
-                text(line.text()).size(size).font(font).color(faded(alpha.max(0.12))).align_x(align).width(Fill).into()
+                let alpha = if past { 0.3 - 0.05 * distance } else { 0.5 - 0.07 * distance };
+                text(line.text()).size(size).font(font).color(faded(alpha.max(0.1))).align_x(align).width(Fill).into()
             };
             col = col.push(
                 button(body)
                     .width(Fill)
-                    .padding([size * 0.12, 14.0])
+                    .padding([pad_y, 14.0])
                     .style(style::lyric_line(self.colors, self.r()))
                     .on_press(Message::SeekTo(line.start_ms)),
             );
         }
-        col.into()
+        container(col).height(Fill).clip(true).into()
     }
 
     fn active_line(&self, line: &Line, pos: u32, size: f32, font: Font, align: Alignment) -> El<'_> {
@@ -751,22 +800,29 @@ impl App {
             return text(line.text()).size(size).font(font).align_x(align).width(Fill).into();
         }
         let lit = self.colors.text;
-        let unlit = style::alpha(self.colors.text, 0.38);
+        let unlit = style::alpha(self.colors.text, 0.36);
+        // The shine riding on the edge of the fill: the text colour warmed by the accent.
+        let shine = style::mix(self.colors.text, style::mix(self.colors.accent, iced::Color::WHITE, 0.55), 0.85);
         let mut spans: Vec<text::Span<'_, (), Font>> = Vec::new();
         for (i, w) in line.words.iter().enumerate() {
             let sep = if i + 1 < line.words.len() { " " } else { "" };
             if pos >= w.end_ms {
-                spans.push(span(format!("{}{sep}", w.text)).color(lit));
+                // Just-finished words keep a fading trace of the shine.
+                let after = (pos - w.end_ms) as f32 / 350.0;
+                let colour = if after < 1.0 { style::mix(shine, lit, after) } else { lit };
+                spans.push(span(format!("{}{sep}", w.text)).color(colour));
             } else if pos < w.start_ms {
                 spans.push(span(format!("{}{sep}", w.text)).color(unlit));
             } else {
-                // The word being sung fills in letter by letter, with a soft edge.
+                // The word being sung fills in letter by letter; the letters at the edge shine.
                 let progress = (pos - w.start_ms) as f32 / (w.end_ms - w.start_ms).max(1) as f32;
                 let chars: Vec<char> = w.text.chars().collect();
                 let edge = progress * chars.len() as f32;
                 for (k, c) in chars.iter().enumerate() {
-                    let t = (edge - k as f32).clamp(0.0, 1.0);
-                    spans.push(span(c.to_string()).color(style::mix(unlit, lit, t)));
+                    let fill = (edge - k as f32).clamp(0.0, 1.0);
+                    let near = 1.0 - ((edge - k as f32 - 0.5).abs() / 1.6).min(1.0);
+                    let colour = style::mix(style::mix(unlit, lit, fill), shine, near * fill.max(0.4));
+                    spans.push(span(c.to_string()).color(colour));
                 }
                 if !sep.is_empty() {
                     spans.push(span(sep).color(unlit));
@@ -916,7 +972,7 @@ impl App {
             )
             .padding(8)
             .width(Fill)
-            .style(style::card(self.colors, self.r()))
+            .style(style::accent_card(self.colors, self.r()))
             .into(),
             None => self.muted("Nothing playing.").into(),
         };
@@ -929,7 +985,7 @@ impl App {
             .width(self.config.layout.side_panel_width)
             .height(Fill)
             .padding(14)
-            .style(style::panel(self.colors, self.panel_r()))
+            .style(self.glass())
             .into()
     }
 
@@ -956,7 +1012,7 @@ impl App {
 
         let repeat = if self.queue.repeat == Repeat::One { icon::REPEAT_1 } else { icon::REPEAT };
         let play = button(
-            container(icon(if self.playing { icon::PAUSE } else { icon::PLAY }, self.fs(1.15))).center(36),
+            container(icon(if self.playing { icon::PAUSE } else { icon::PLAY }, self.fs(1.2))).center(40),
         )
         .padding(0)
         .style(style::play_button(self.colors))
@@ -1011,9 +1067,10 @@ impl App {
                 .spacing(16)
                 .align_y(Alignment::Center),
         )
-        .padding([10, 16])
+        .padding([10, 14])
         .width(Fill)
         .height(Shrink)
+        .style(self.glass())
         .into()
     }
 
@@ -1192,6 +1249,7 @@ impl App {
             ),
             self.field("Accent colour", "#ff5c8a", &a.colors.accent, Edit::Accent),
             self.toggle("Accent from cover art", a.accent_from_cover, Edit::AccentFromCover),
+            self.toggle("Cover glow background", a.ambient_background, Edit::AmbientBackground),
             self.setting("App icon", icon_controls),
             self.setting(
                 "App font",
@@ -1210,6 +1268,10 @@ impl App {
             self.toggle("Album art", a.show_album_art, Edit::AlbumArt),
         ];
         let lyrics_rows = vec![
+            self.setting(
+                "Lyrics provider",
+                self.picker(LyricsProvider::ALL, LyricsProvider::of(&ly.sources), |p| Message::Edit(Edit::LyricsProvider(p))),
+            ),
             self.toggle("Word-by-word highlight", ly.word_highlight, Edit::WordHighlight),
             self.toggle("Blurred cover background", ly.blurred_background, Edit::BlurredBackground),
             self.setting("Alignment", self.picker(LyricsAlign::ALL, Some(ly.align), |v| Message::Edit(Edit::LyricsAlign(v)))),

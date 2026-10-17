@@ -125,6 +125,19 @@ impl Audio {
         Ok(bytes.to_vec())
     }
 
+    /// A Web API token from the playback login. Spotify's own client isn't held to the limits of
+    /// developer apps, so this can read playlists your app gets "403 Forbidden" for.
+    pub async fn web_token(&self, settings: &PlaybackConfig) -> Result<String> {
+        self.ensure_connected(settings).await?;
+        let session = self.session.lock().expect("session lock").clone();
+        let token = session
+            .token_provider()
+            .get_token("playlist-read-private,playlist-read-collaborative,user-library-read")
+            .await
+            .map_err(|e| anyhow!("playback login token: {e}"))?;
+        Ok(token.access_token)
+    }
+
     /// 0-100
     pub fn set_volume(&self, volume: u8) {
         self.mixer.set_volume(volume_to_u16(volume));
@@ -176,6 +189,10 @@ async fn playback_login(client_id: &str) -> Result<Credentials> {
         .map_err(|e| anyhow!("playback login failed: {e}"))?;
     Ok(Credentials::with_access_token(token.access_token))
 }
+
+/// How far librespot's reported position runs ahead of what you hear: it counts what has been
+/// decoded, and the rodio output keeps about half a second of that queued.
+pub const OUTPUT_DELAY_MS: u32 = 450;
 
 /// The redirect address registered for Spotify's own client ID.
 const PLAYBACK_REDIRECT: &str = "http://127.0.0.1:8898/login";
