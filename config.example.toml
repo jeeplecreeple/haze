@@ -1,4 +1,4 @@
-# Haztify configuration. Every key is optional; anything left out uses the default shown here.
+# Haze configuration. Every key is optional; anything left out uses the default shown here.
 
 [spotify]
 # Client ID of your own app from https://developer.spotify.com/dashboard
@@ -14,9 +14,9 @@ gapless = true
 audio_cache_mb = 0        # keep this much audio on disk for replays; 0 = off
 
 [appearance]
-# haztify | spotify | apple-music | apple-music-dark | nord | gruvbox | catppuccin | dracula | light,
+# haze | spotify | apple-music | apple-music-dark | nord | gruvbox | catppuccin | dracula | light,
 # or the name of a theme file in the "themes" folder next to this file (see the guide)
-theme = "haztify"
+theme = "haze"
 font_size = 14.0
 font_family = ""          # empty = the built-in Inter; "system" = your system font; or any installed font / one in the "fonts" folder
 font_files = []           # extra .ttf/.otf files to load from anywhere

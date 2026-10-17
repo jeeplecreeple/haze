@@ -36,6 +36,7 @@ pub fn run(config: Config) -> iced::Result {
     let _ = PLAYER_TX.set(tx);
     *PLAYER_RX.lock().expect("player channel") = Some(rx);
 
+    custom::migrate_menu_entry(&config.appearance.app_icon);
     let (fonts, families) = custom::load_fonts(&config.appearance.font_files);
     if !families.is_empty() {
         log::info!("loaded fonts: {}", families.join(", "));
@@ -46,10 +47,10 @@ pub fn run(config: Config) -> iced::Result {
     let window = window::Settings {
         size: iced::Size::new(config.appearance.window_width, config.appearance.window_height),
         icon: custom::window_icon(&config.appearance.app_icon),
-        // Matches haztify.desktop, which is where Wayland desktops find the icon.
+        // Matches haze.desktop, which is where Wayland desktops find the icon.
         #[cfg(target_os = "linux")]
         platform_specific: window::settings::PlatformSpecific {
-            application_id: "haztify".into(),
+            application_id: "haze".into(),
             ..Default::default()
         },
         ..Default::default()
@@ -316,7 +317,7 @@ impl App {
         };
         let mut app = app;
         app.refresh_theme_names();
-        if std::env::var_os("HAZTIFY_DEMO").is_some() {
+        if std::env::var_os("HAZE_DEMO").is_some() {
             app.load_demo();
             return (app, Task::none());
         }
@@ -327,8 +328,8 @@ impl App {
 
     fn title(&self) -> String {
         match self.queue.current() {
-            Some(e) => format!("{} · {} — Haztify", e.track.name, e.track.artist_line()),
-            None => "Haztify".into(),
+            Some(e) => format!("{} · {} — Haze", e.track.name, e.track.artist_line()),
+            None => "Haze".into(),
         }
     }
 
@@ -935,7 +936,7 @@ impl App {
                     }
                     self.notify(
                         if cfg!(target_os = "macos") {
-                            "Icon set for the window. To change the Dock icon, use Get Info on Haztify.app in Finder."
+                            "Icon set for the window. To change the Dock icon, use Get Info on Haze.app in Finder."
                         } else {
                             "App icon updated"
                         },
@@ -1129,7 +1130,7 @@ impl App {
         self.refresh_theme();
     }
 
-    /// `HAZTIFY_DEMO=1` fills the UI with sample data (no Spotify login) for previewing themes and layouts.
+    /// `HAZE_DEMO=1` fills the UI with sample data (no Spotify login) for previewing themes and layouts.
     fn load_demo(&mut self) {
         let t = |name: &str, artist: &str, album: &str, ms: u32| Track {
             id: name.into(),
@@ -1168,7 +1169,7 @@ impl App {
         for (i, e) in tracks.iter().enumerate().skip(1).take(2) {
             self.queue.push(Entry { track: e.clone(), origin: Origin::Dj { intro: Some(format!("intro {i}")) } });
         }
-        self.page = match std::env::var("HAZTIFY_DEMO").as_deref() {
+        self.page = match std::env::var("HAZE_DEMO").as_deref() {
             Ok("settings") => Page::Settings,
             Ok("tracks") => Page::Liked,
             Ok("lyrics") => Page::Lyrics,

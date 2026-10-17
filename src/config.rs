@@ -1,6 +1,6 @@
 //! User configuration, stored as TOML in the platform config directory:
-//! Linux `~/.config/haztify/config.toml`, macOS `~/Library/Application Support/haztify/config.toml`,
-//! Windows `%APPDATA%\haztify\config\config.toml`.
+//! Linux `~/.config/haze/config.toml`, macOS `~/Library/Application Support/haze/config.toml`,
+//! Windows `%APPDATA%\haze\config\config.toml`.
 //!
 //! Every field has a default, so a partial file (or none at all) is valid.
 
@@ -11,7 +11,40 @@ use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 
 pub fn dirs() -> Result<ProjectDirs> {
-    ProjectDirs::from("", "", "haztify").context("could not determine a home directory")
+    ProjectDirs::from("", "", "haze").context("could not determine a home directory")
+}
+
+/// The app's name before it was renamed. Its folders are moved over on first launch.
+pub const OLD_NAME: &str = "haztify";
+
+/// Moves the config and cache folders from the old name to the new one, once, and points any
+/// saved paths (icon, covers, fonts) at the new folder. Does nothing when the new folders exist.
+fn migrate_old_folders() {
+    let (Some(old), Ok(new)) = (ProjectDirs::from("", "", OLD_NAME), dirs()) else { return };
+    if old.config_dir() == new.config_dir() {
+        return;
+    }
+    for (from, to) in [(old.config_dir(), new.config_dir()), (old.cache_dir(), new.cache_dir())] {
+        if !from.exists() || to.exists() {
+            continue;
+        }
+        let moved = to.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|_| std::fs::rename(from, to));
+        match moved {
+            Ok(()) => log::info!("moved {} to {}", from.display(), to.display()),
+            Err(e) => log::warn!("couldn't move {} to {}: {e}", from.display(), to.display()),
+        }
+    }
+    let path = new.config_dir().join("config.toml");
+    let Ok(text) = std::fs::read_to_string(&path) else { return };
+    let (from, to) = (old.config_dir().to_string_lossy(), new.config_dir().to_string_lossy());
+    // TOML strings escape backslashes, so Windows paths appear doubled in the file.
+    let fixed = text
+        .replace(from.as_ref(), to.as_ref())
+        .replace(&from.replace('\\', "\\\\"), &to.replace('\\', "\\\\"))
+        .replace(&format!("theme = \"{OLD_NAME}\""), "theme = \"haze\"");
+    if fixed != text {
+        let _ = std::fs::write(&path, fixed);
+    }
 }
 
 pub fn config_path() -> Result<PathBuf> {
@@ -46,6 +79,7 @@ pub struct Config {
 impl Config {
     /// Loads the config, writing a default one on first run so users have something to edit.
     pub fn load_or_create() -> Result<Self> {
+        migrate_old_folders();
         let path = config_path()?;
         if !path.exists() {
             let config = Config::default();
@@ -134,7 +168,7 @@ impl Default for PlaybackConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Appearance {
-    /// A built-in preset (haztify, spotify, apple-music, apple-music-dark, nord, gruvbox,
+    /// A built-in preset (haze, spotify, apple-music, apple-music-dark, nord, gruvbox,
     /// catppuccin, dracula, light) or the name of a file in the `themes` folder.
     /// Any colour set in `colors` overrides the theme.
     pub theme: String,
@@ -162,7 +196,7 @@ pub struct Appearance {
 impl Default for Appearance {
     fn default() -> Self {
         Self {
-            theme: "haztify".into(),
+            theme: "haze".into(),
             colors: ColorOverrides::default(),
             font_size: 14.0,
             font_family: String::new(),

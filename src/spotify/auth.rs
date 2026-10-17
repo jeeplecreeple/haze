@@ -25,7 +25,7 @@ const SCOPES: &[&str] = &[
 ];
 
 const LOGIN_PAGE: &str = "<html><body style=\"font-family:sans-serif;background:#0f0f14;color:#f1f1f5;\
-text-align:center;padding-top:20vh\"><h1>Haztify is logged in</h1><p>You can close this tab.</p></body></html>";
+text-align:center;padding-top:20vh\"><h1>Haze is logged in</h1><p>You can close this tab.</p></body></html>";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct StoredToken {

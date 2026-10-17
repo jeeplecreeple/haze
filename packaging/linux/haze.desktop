@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=Haztify
+Name=Haze
 Comment=Lightweight Spotify client with an AI DJ
-Exec=haztify
-Icon=haztify
+Exec=haze
+Icon=haze
 Terminal=false
 Categories=AudioVideo;Audio;Player;
-StartupWMClass=haztify
+StartupWMClass=haze

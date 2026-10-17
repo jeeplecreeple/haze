@@ -142,13 +142,13 @@ impl App {
     fn login_view(&self) -> El<'_> {
         let brand = column![
             image(self.icon.clone()).width(72).height(72),
-            self.heading("Haztify", 2.0),
+            self.heading("Haze", 2.0),
         ]
         .spacing(12)
         .align_x(Alignment::Center);
         let body: El = match self.login {
             Login::NeedsClientId => column![
-                text("Haztify talks to Spotify through your own free developer app, so your login stays yours.")
+                text("Haze talks to Spotify through your own free developer app, so your login stays yours.")
                     .size(self.fs(1.0)),
                 self.muted("1. Open developer.spotify.com/dashboard and create an app."),
                 self.muted(format!("2. Add this Redirect URI exactly: {}", self.config.spotify.redirect_uri)),
@@ -267,7 +267,7 @@ impl App {
     fn sidebar(&self) -> El<'_> {
         let brand = row![
             image(self.icon.clone()).width(30).height(30),
-            self.heading("Haztify", 1.35).color(self.colors.text),
+            self.heading("Haze", 1.35).color(self.colors.text),
         ]
         .spacing(10)
         .align_y(Alignment::Center);

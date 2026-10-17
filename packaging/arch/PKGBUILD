@@ -1,14 +1,14 @@
-# Builds Haztify from the checkout this file sits in, so it also works while the repo is private:
-#   git clone https://github.com/jeeplecreeple/haztify
-#   cd haztify/packaging/arch
+# Builds Haze from the checkout this file sits in, so it also works while the repo is private:
+#   git clone https://github.com/jeeplecreeple/haze
+#   cd haze/packaging/arch
 #   makepkg -Csi
 # Maintainer: Haz
-pkgname=haztify
-pkgver=0.1.0
+pkgname=haze
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Native, lightweight, customisable Spotify client with an AI DJ"
 arch=('x86_64' 'aarch64')
-url="https://github.com/jeeplecreeple/haztify"
+url="https://github.com/jeeplecreeple/haze"
 license=('MIT')
 depends=('alsa-lib' 'libxkbcommon' 'libxkbcommon-x11' 'gcc-libs' 'glibc')
 optdepends=('espeak-ng: spoken DJ intros with the system voice'
@@ -46,9 +46,9 @@ check() {
 
 package() {
   cd "$(_root)"
-  install -Dm755 "$srcdir/target/release/haztify" "$pkgdir/usr/bin/haztify"
-  install -Dm644 packaging/linux/haztify.desktop "$pkgdir/usr/share/applications/haztify.desktop"
-  install -Dm644 assets/icon.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/haztify.png"
+  install -Dm755 "$srcdir/target/release/haze" "$pkgdir/usr/bin/haze"
+  install -Dm644 packaging/linux/haze.desktop "$pkgdir/usr/share/applications/haze.desktop"
+  install -Dm644 assets/icon.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/haze.png"
   install -Dm644 config.example.toml "$pkgdir/usr/share/doc/$pkgname/config.example.toml"
   install -Dm644 GUIDE.md README.md -t "$pkgdir/usr/share/doc/$pkgname/"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"

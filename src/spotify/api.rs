@@ -49,7 +49,7 @@ pub struct Api {
 impl Api {
     pub fn new(auth: Auth) -> Self {
         let http = reqwest::Client::builder()
-            .user_agent(concat!("haztify/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("haze/", env!("CARGO_PKG_VERSION")))
             .timeout(Duration::from_secs(20))
             .build()
             .expect("HTTP client");

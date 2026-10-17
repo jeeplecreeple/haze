@@ -1,13 +1,13 @@
-# Installs the prebuilt release binary (no compiling). Ready for the AUR as "haztify-bin".
+# Installs the prebuilt release binary (no compiling). Ready for the AUR as "haze-bin".
 # Needs the GitHub repo to be public so the release download works without a login.
 # Maintainer: Haz
-pkgname=haztify-bin
-_pkgname=haztify
-pkgver=0.1.0
+pkgname=haze-bin
+_pkgname=haze
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Native, lightweight, customisable Spotify client with an AI DJ (prebuilt)"
 arch=('x86_64' 'aarch64')
-url="https://github.com/jeeplecreeple/haztify"
+url="https://github.com/jeeplecreeple/haze"
 license=('MIT')
 depends=('alsa-lib' 'libxkbcommon' 'libxkbcommon-x11' 'gcc-libs' 'glibc')
 optdepends=('espeak-ng: spoken DJ intros with the system voice'
@@ -16,17 +16,17 @@ optdepends=('espeak-ng: spoken DJ intros with the system voice'
             'xdg-desktop-portal-gtk: file picker for custom icons, covers and fonts')
 provides=("$_pkgname")
 conflicts=("$_pkgname")
-source_x86_64=("$_pkgname-$pkgver-x86_64.tar.gz::$url/releases/download/v$pkgver/haztify-linux-x86_64.tar.gz")
-source_aarch64=("$_pkgname-$pkgver-aarch64.tar.gz::$url/releases/download/v$pkgver/haztify-linux-arm64.tar.gz")
+source_x86_64=("$_pkgname-$pkgver-x86_64.tar.gz::$url/releases/download/v$pkgver/haze-linux-x86_64.tar.gz")
+source_aarch64=("$_pkgname-$pkgver-aarch64.tar.gz::$url/releases/download/v$pkgver/haze-linux-arm64.tar.gz")
 # Run `updpkgsums` after each release to fill these in.
 sha256sums_x86_64=('SKIP')
 sha256sums_aarch64=('SKIP')
 
 package() {
   cd "$srcdir/$_pkgname"
-  install -Dm755 haztify "$pkgdir/usr/bin/haztify"
-  install -Dm644 haztify.desktop "$pkgdir/usr/share/applications/haztify.desktop"
-  install -Dm644 haztify.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/haztify.png"
+  install -Dm755 haze "$pkgdir/usr/bin/haze"
+  install -Dm644 haze.desktop "$pkgdir/usr/share/applications/haze.desktop"
+  install -Dm644 haze.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/haze.png"
   install -Dm644 config.example.toml GUIDE.md README.md -t "$pkgdir/usr/share/doc/$_pkgname/"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$_pkgname/LICENSE"
 }

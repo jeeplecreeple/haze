@@ -17,7 +17,7 @@ pub struct Colors {
 }
 
 pub const PRESETS: [&str; 9] = [
-    "haztify",
+    "haze",
     "spotify",
     "apple-music",
     "apple-music-dark",
@@ -142,7 +142,7 @@ pub fn accent_from_image(bytes: &[u8]) -> Option<Color> {
 
 pub fn iced_theme(colors: &Colors) -> Theme {
     Theme::custom(
-        "Haztify",
+        "Haze",
         Palette {
             background: colors.background,
             text: colors.text,

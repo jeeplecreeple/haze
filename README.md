@@ -1,4 +1,4 @@
-# Haztify
+# Haze
 
 A native Spotify client that stays out of your RAM, looks the way you want, and comes with an AI DJ
 that runs on **your own** LLM API key.
@@ -24,21 +24,21 @@ that runs on **your own** LLM API key.
 
 > ⚠️ **The macOS and Windows builds are NOT tested.** They compile in CI, but nobody has played
 > music with them yet. If you try one, you're very welcome to
-> [open an issue](https://github.com/jeeplecreeple/haztify/issues/new) to say whether it works,
-> even if it does. Linux is where Haztify is developed.
+> [open an issue](https://github.com/jeeplecreeple/haze/issues/new) to say whether it works,
+> even if it does. Linux is where Haze is developed.
 
 ## Download
 
-Get the latest build from [Releases](https://github.com/jeeplecreeple/haztify/releases/latest):
+Get the latest build from [Releases](https://github.com/jeeplecreeple/haze/releases/latest):
 
 | System | File |
 | --- | --- |
-| Debian, Ubuntu and derivatives | `haztify-linux-x86_64.deb` / `haztify-linux-arm64.deb` |
-| Any other Linux | `haztify-linux-x86_64.tar.gz` / `haztify-linux-arm64.tar.gz` |
+| Debian, Ubuntu and derivatives | `haze-linux-x86_64.deb` / `haze-linux-arm64.deb` |
+| Any other Linux | `haze-linux-x86_64.tar.gz` / `haze-linux-arm64.tar.gz` |
 | Arch Linux | `makepkg -si`, see the [Arch steps in the guide](GUIDE.md#arch-linux) |
-| macOS, Apple Silicon (untested) | `haztify-macos-arm64.zip` |
-| macOS, Intel (untested) | `haztify-macos-x86_64.zip` |
-| Windows 10/11 (untested) | `haztify-windows-x86_64.zip` |
+| macOS, Apple Silicon (untested) | `haze-macos-arm64.zip` |
+| macOS, Intel (untested) | `haze-macos-x86_64.zip` |
+| Windows 10/11 (untested) | `haze-windows-x86_64.zip` |
 
 **New here? The [guide](GUIDE.md) walks through install, Spotify setup, the DJ and customising.**
 
@@ -47,7 +47,7 @@ Get the latest build from [Releases](https://github.com/jeeplecreeple/haztify/re
 1. Create a free app at <https://developer.spotify.com/dashboard>.
    - Redirect URI: `http://127.0.0.1:8898/login` (exactly)
    - APIs: tick **Web API** and **Web Playback SDK**
-2. Start Haztify, paste the app's **Client ID**, and log in in the browser window that opens.
+2. Start Haze, paste the app's **Client ID**, and log in in the browser window that opens.
    Your login is cached, so next time it starts straight into your library.
 3. To use the DJ, open **Settings → DJ**, pick a provider and add your API key (or set the usual
    environment variable such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` and
@@ -78,9 +78,9 @@ Everything lives in one TOML file (created on first run; the Settings page edits
 
 | OS | Path |
 | --- | --- |
-| Linux | `~/.config/haztify/config.toml` |
-| macOS | `~/Library/Application Support/haztify/config.toml` |
-| Windows | `%APPDATA%\haztify\config\config.toml` |
+| Linux | `~/.config/haze/config.toml` |
+| macOS | `~/Library/Application Support/haze/config.toml` |
+| Windows | `%APPDATA%\haze\config\config.toml` |
 
 See [`config.example.toml`](config.example.toml) for every option. The file is created readable by
 your user only, since it can hold an API key. Prefer the environment-variable route for keys if you
@@ -89,7 +89,7 @@ sync your dotfiles.
 `renderer = "cpu"` (default) uses the lightweight software renderer; `"gpu"` uses Vulkan, Metal or
 DirectX via wgpu, which is smoother on big/high-refresh screens but costs more memory.
 
-Set `HAZTIFY_DEMO=1` (or `=tracks`, `=lyrics`, `=settings`) to open the UI with sample data and no login, handy
+Set `HAZE_DEMO=1` (or `=tracks`, `=lyrics`, `=settings`) to open the UI with sample data and no login, handy
 for trying themes and layouts.
 
 ## Building
@@ -105,7 +105,7 @@ sudo pacman -S --needed base-devel alsa-lib
 sudo dnf install gcc pkg-config alsa-lib-devel
 
 cargo build --release --locked
-./target/release/haztify
+./target/release/haze
 ```
 
 Always build with `--locked`: the lockfile pins `vergen` to 9.0.x, which librespot 0.8's build script
@@ -123,7 +123,7 @@ means `Cmd` on macOS. Rebind any of them under `[keys]`.
 
 ## Notes
 
-- Haztify never sends your Spotify login or API keys anywhere except Spotify and the provider you
+- Haze never sends your Spotify login or API keys anywhere except Spotify and the provider you
   chose.
 - This is an unofficial client and is not affiliated with Spotify.
 - Bundled fonts: Inter (SIL Open Font License) and Lucide icons (ISC). See

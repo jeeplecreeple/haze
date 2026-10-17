@@ -202,7 +202,7 @@ pub async fn lrclib(track: &Track) -> Result<Option<Lyrics>> {
         plain_lyrics: Option<String>,
     }
     let http = reqwest::Client::builder()
-        .user_agent(concat!("haztify/", env!("CARGO_PKG_VERSION"), " (https://github.com/jeeplecreeple/haztify)"))
+        .user_agent(concat!("haze/", env!("CARGO_PKG_VERSION"), " (https://github.com/jeeplecreeple/haze)"))
         .timeout(Duration::from_secs(10))
         .build()?;
     let artist = track.artists.first().map(String::as_str).unwrap_or_default();

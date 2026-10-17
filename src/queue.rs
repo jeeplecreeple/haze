@@ -1,4 +1,4 @@
-//! The play queue. Haztify owns its queue so the DJ can add to it freely.
+//! The play queue. Haze owns its queue so the DJ can add to it freely.
 
 use rand::seq::SliceRandom;
 

@@ -28,12 +28,12 @@ async fn system(config: &DjConfig, text: &str) -> Result<()> {
         // Text goes through an environment variable so it is never parsed as script.
         let script = "Add-Type -AssemblyName System.Speech; \
             $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; \
-            if ($env:HAZTIFY_VOICE) { $s.SelectVoice($env:HAZTIFY_VOICE) }; \
-            $s.Speak($env:HAZTIFY_TTS)";
+            if ($env:HAZE_VOICE) { $s.SelectVoice($env:HAZE_VOICE) }; \
+            $s.Speak($env:HAZE_TTS)";
         Command::new("powershell")
             .args(["-NoProfile", "-NonInteractive", "-Command", script])
-            .env("HAZTIFY_TTS", text)
-            .env("HAZTIFY_VOICE", voice.unwrap_or_default())
+            .env("HAZE_TTS", text)
+            .env("HAZE_VOICE", voice.unwrap_or_default())
             .status()
             .await
             .context("running PowerShell speech")?

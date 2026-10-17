@@ -1,10 +1,10 @@
 [package]
-name = "haztify"
-version = "0.1.0"
+name = "haze"
+version = "0.2.0"
 edition = "2024"
 description = "A native, lightweight, heavily customisable Spotify client with an AI DJ"
 license = "MIT"
-default-run = "haztify"
+default-run = "haze"
 
 [dependencies]
 anyhow = "1"
@@ -49,7 +49,7 @@ section = "sound"
 depends = "libasound2 | libasound2t64, libxkbcommon0, libxkbcommon-x11-0"
 recommends = "espeak-ng, xdg-desktop-portal"
 assets = [
-    ["target/release/haztify", "usr/bin/", "755"],
-    ["packaging/linux/haztify.desktop", "usr/share/applications/", "644"],
-    ["assets/icon.png", "usr/share/icons/hicolor/256x256/apps/haztify.png", "644"],
+    ["target/release/haze", "usr/bin/", "755"],
+    ["packaging/linux/haze.desktop", "usr/share/applications/", "644"],
+    ["assets/icon.png", "usr/share/icons/hicolor/256x256/apps/haze.png", "644"],
 ]

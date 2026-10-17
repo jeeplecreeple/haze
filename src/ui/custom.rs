@@ -67,13 +67,13 @@ pub async fn pick_font() -> Option<PathBuf> {
         .map(|f| f.path().to_path_buf())
 }
 
-const MENU_ENTRY_MARK: &str = "# Written by Haztify for your custom icon.";
+const MENU_ENTRY_MARK: &str = "# Written by Haze for your custom icon.";
 
 fn menu_entry_path() -> Option<PathBuf> {
     let data = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))?;
-    Some(data.join("applications/haztify.desktop"))
+    Some(data.join("applications/haze.desktop"))
 }
 
 /// On Linux the launcher and (on Wayland) the taskbar take the icon from the app's desktop entry,
@@ -100,9 +100,9 @@ pub fn update_menu_entry(icon: Option<&Path>) -> Result<()> {
             std::fs::write(
                 &path,
                 format!(
-                    "{MENU_ENTRY_MARK}\n[Desktop Entry]\nType=Application\nName=Haztify\n\
+                    "{MENU_ENTRY_MARK}\n[Desktop Entry]\nType=Application\nName=Haze\n\
                      Comment=Lightweight Spotify client with an AI DJ\nExec=\"{}\"\nIcon={}\n\
-                     Terminal=false\nCategories=Audio;Music;Player;AudioVideo;\nStartupWMClass=haztify\n",
+                     Terminal=false\nCategories=Audio;Music;Player;AudioVideo;\nStartupWMClass=haze\n",
                     exe.display(),
                     icon.display()
                 ),
@@ -110,6 +110,24 @@ pub fn update_menu_entry(icon: Option<&Path>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// A custom-icon menu entry written under the app's old name points at the old program, so it is
+/// replaced with one under the new name.
+pub fn migrate_menu_entry(app_icon: &str) {
+    let Some(new) = menu_entry_path() else { return };
+    let old = new.with_file_name(format!("{}.desktop", config::OLD_NAME));
+    // Its first line is MENU_ENTRY_MARK with the old name in it.
+    let ours = std::fs::read_to_string(&old).is_ok_and(|s| s.contains("for your custom icon."));
+    if old == new || !ours {
+        return;
+    }
+    let _ = std::fs::remove_file(&old);
+    if let Some(icon) = config::non_empty(app_icon)
+        && let Err(e) = update_menu_entry(Some(Path::new(icon)))
+    {
+        log::warn!("menu entry: {e}");
+    }
 }
 
 /// A font file's family name, which is what `font_family` has to match.

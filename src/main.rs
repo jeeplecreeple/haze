@@ -10,13 +10,13 @@ mod theme;
 mod ui;
 
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("haztify=info,librespot=warn"))
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("haze=info,librespot=warn"))
         .init();
 
     let config = match config::Config::load_or_create() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Haztify: {e:#}\nStarting with default settings.");
+            eprintln!("Haze: {e:#}\nStarting with default settings.");
             config::Config::default()
         }
     };
@@ -28,7 +28,7 @@ fn main() {
     }
 
     if let Err(e) = ui::run(config) {
-        eprintln!("Haztify: {e}");
+        eprintln!("Haze: {e}");
         std::process::exit(1);
     }
 }

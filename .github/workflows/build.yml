@@ -51,7 +51,7 @@ jobs:
           if [ -n "${{ matrix.target }}" ]; then
             cargo build --release --locked --target ${{ matrix.target }}
             mkdir -p target/release
-            cp target/${{ matrix.target }}/release/haztify target/release/haztify
+            cp target/${{ matrix.target }}/release/haze target/release/haze
           else
             cargo build --release --locked
           fi
@@ -61,47 +61,47 @@ jobs:
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: |
-          mkdir -p dist/haztify
-          cp target/release/haztify README.md GUIDE.md LICENSE config.example.toml packaging/linux/haztify.desktop dist/haztify/
-          cp assets/icon.png dist/haztify/haztify.png
-          tar -C dist -czf haztify-${{ matrix.name }}.tar.gz haztify
+          mkdir -p dist/haze
+          cp target/release/haze README.md GUIDE.md LICENSE config.example.toml packaging/linux/haze.desktop dist/haze/
+          cp assets/icon.png dist/haze/haze.png
+          tar -C dist -czf haze-${{ matrix.name }}.tar.gz haze
           cargo install cargo-deb --locked
-          cargo deb --no-build --output haztify-${{ matrix.name }}.deb
+          cargo deb --no-build --output haze-${{ matrix.name }}.deb
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
         run: |
-          app=dist/Haztify.app/Contents
+          app=dist/Haze.app/Contents
           mkdir -p "$app/MacOS"
-          cp target/release/haztify "$app/MacOS/haztify"
+          cp target/release/haze "$app/MacOS/haze"
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           sed "s/@VERSION@/$version/g" packaging/macos/Info.plist > "$app/Info.plist"
-          mkdir -p "$app/Resources" haztify.iconset
+          mkdir -p "$app/Resources" haze.iconset
           for s in 16 32 128 256; do
-            sips -z $s $s assets/icon.png --out haztify.iconset/icon_${s}x${s}.png
+            sips -z $s $s assets/icon.png --out haze.iconset/icon_${s}x${s}.png
             if [ $((s * 2)) -le 256 ]; then
-              sips -z $((s * 2)) $((s * 2)) assets/icon.png --out haztify.iconset/icon_${s}x${s}@2x.png
+              sips -z $((s * 2)) $((s * 2)) assets/icon.png --out haze.iconset/icon_${s}x${s}@2x.png
             fi
           done
-          iconutil -c icns haztify.iconset -o "$app/Resources/haztify.icns"
+          iconutil -c icns haze.iconset -o "$app/Resources/haze.icns"
           # Ad-hoc signature so Apple Silicon will run it; it is not notarized.
-          codesign --force --deep --sign - dist/Haztify.app
+          codesign --force --deep --sign - dist/Haze.app
           cp README.md GUIDE.md LICENSE config.example.toml dist/
-          ditto -c -k --keepParent dist haztify-${{ matrix.name }}.zip
+          ditto -c -k --keepParent dist haze-${{ matrix.name }}.zip
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force dist/haztify | Out-Null
-          Copy-Item target/release/haztify.exe, README.md, GUIDE.md, LICENSE, config.example.toml dist/haztify/
-          Compress-Archive -Path dist/haztify -DestinationPath haztify-${{ matrix.name }}.zip
+          New-Item -ItemType Directory -Force dist/haze | Out-Null
+          Copy-Item target/release/haze.exe, README.md, GUIDE.md, LICENSE, config.example.toml dist/haze/
+          Compress-Archive -Path dist/haze -DestinationPath haze-${{ matrix.name }}.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: haztify-${{ matrix.name }}
+          name: haze-${{ matrix.name }}
           path: |
-            haztify-${{ matrix.name }}.*
+            haze-${{ matrix.name }}.*
           if-no-files-found: error
 
   release:
