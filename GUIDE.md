@@ -172,15 +172,6 @@ Leave **Model** empty to use the provider's default, then click **Save settings*
 On macOS, apps opened from Finder don't see environment variables from your shell, so paste the
 key into Settings instead.
 
-### Set a voice
-
-1. Install Piper from [the Piper github repository.](https://github.com/rhasspy/piper) Don't worry about finding Piper yourself, it should find it automatically, though you will need to restart Haze.
-2. Get a voice for Piper from Hugging Face from [the repository.](https://huggingface.co/rhasspy/piper-voices)
-3. Find a voice you like and install the .onnx file
-4. Go to Haze, go to DJ voice and select your voice file (under voice file, duh...)
-5. You may need to restart Haze for the voice to take affect.
-6. Start a set (using the guide below) and you're done!
-
 ### Start a set
 
 1. Click **DJ** in the sidebar.
