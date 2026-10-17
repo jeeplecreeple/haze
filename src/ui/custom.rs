@@ -163,13 +163,18 @@ pub fn load_fonts(extra: &[String]) -> (Vec<Vec<u8>>, Vec<String>) {
     (fonts, families)
 }
 
+/// The font for `font_family`: empty means the bundled Inter, "system" the system's sans-serif.
 /// iced wants `'static` font names. Names are leaked once each, so changing fonts in Settings
 /// doesn't grow memory beyond a few bytes per distinct name.
 pub fn font(name: &str) -> iced::Font {
     use std::collections::HashSet;
     use std::sync::Mutex;
     static NAMES: Mutex<Option<HashSet<&'static str>>> = Mutex::new(None);
+    let name = name.trim();
     if name.is_empty() {
+        return iced::Font::with_name("Inter");
+    }
+    if name.eq_ignore_ascii_case("system") {
         return iced::Font::DEFAULT;
     }
     let mut names = NAMES.lock().expect("font names");

@@ -1,6 +1,7 @@
 //! Application state and update loop.
 
 mod custom;
+mod icon;
 mod keys;
 mod style;
 mod view;
@@ -60,14 +61,18 @@ pub fn run(config: Config) -> iced::Result {
         .subscription(App::subscription)
         .settings(settings)
         .window(window);
+    for font in icon::BUNDLED_FONTS {
+        app = app.font(font);
+    }
     for font in fonts {
         app = app.font(font);
     }
     app.run()
 }
 
-/// The font pickers' label for "no font set".
-pub const DEFAULT_FONT: &str = "Default";
+/// The font pickers' labels for "no font set" (the bundled Inter) and the system's own font.
+pub const DEFAULT_FONT: &str = "Inter (built-in)";
+pub const SYSTEM_FONT: &str = "System font";
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Page {
@@ -1074,7 +1079,11 @@ impl App {
         let a = &mut self.config.appearance;
         let dj = &mut self.config.dj;
         let ly = &mut self.config.lyrics;
-        let font_name = |s: String| if s == DEFAULT_FONT { String::new() } else { s };
+        let font_name = |s: String| match s.as_str() {
+            DEFAULT_FONT => String::new(),
+            SYSTEM_FONT => "system".to_string(),
+            _ => s,
+        };
         match edit {
             Theme(t) => a.theme = t,
             Accent(c) => a.colors.accent = c,

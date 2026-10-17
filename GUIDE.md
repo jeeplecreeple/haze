@@ -227,7 +227,7 @@ top of Settings:
 [appearance]
 theme = "apple-music-dark"  # haztify, spotify, apple-music, apple-music-dark, nord, gruvbox,
                             # catppuccin, dracula, light, or your own theme file
-font_family = "Inter"       # any installed font, or one you added
+font_family = "Noto Sans"   # empty = the built-in Inter, "system" = your system font
 compact = true
 
 [appearance.colors]
@@ -263,6 +263,10 @@ It then shows up in the **Theme** list as `ocean`. Turn on **Accent from cover a
 accent colour follow whatever is playing.
 
 ### Your own fonts
+
+Haztify ships with [Inter](https://rsms.me/inter/) for the app and Inter Display ExtraBold for
+lyrics, so it looks the same on every system. Pick **System font** to use your desktop's font
+instead.
 
 Click **Add font file…** and pick a `.ttf` or `.otf` file. Haztify copies it into its `fonts`
 folder and adds it to the **App font** and **Lyrics font** lists. The lyrics font changes right

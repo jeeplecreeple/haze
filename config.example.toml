@@ -18,7 +18,7 @@ audio_cache_mb = 0        # keep this much audio on disk for replays; 0 = off
 # or the name of a theme file in the "themes" folder next to this file (see the guide)
 theme = "haztify"
 font_size = 14.0
-font_family = ""          # an installed font or one in the "fonts" folder, e.g. "Inter"; empty = default
+font_family = ""          # empty = the built-in Inter; "system" = your system font; or any installed font / one in the "fonts" folder
 font_files = []           # extra .ttf/.otf files to load from anywhere
 app_icon = ""             # window/taskbar/app menu icon (PNG or JPG); empty = built-in. Settings sets it.
 accent_from_cover = false # tint the accent colour from the playing song's cover art
@@ -51,8 +51,8 @@ track_columns = ["title", "artist", "album", "duration"]   # any order, any subs
 sources = ["spotify", "lrclib"]   # tried in order; lrclib = lrclib.net, a free community database
 word_highlight = true     # light up each word as it's sung
 blurred_background = true # blurred cover art behind the lyrics
-font_size = 30.0
-font_family = ""          # empty = the app font
+font_size = 34.0
+font_family = ""          # empty = the built-in Inter Display ExtraBold
 align = "left"            # left | center
 offset_ms = 0             # negative = earlier, positive = later
 lines_before = 2          # past lines kept on screen

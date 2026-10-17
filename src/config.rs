@@ -224,7 +224,7 @@ impl Default for LyricsConfig {
             sources: vec!["spotify".into(), "lrclib".into()],
             word_highlight: true,
             blurred_background: true,
-            font_size: 30.0,
+            font_size: 34.0,
             font_family: String::new(),
             align: LyricsAlign::Left,
             offset_ms: 0,
