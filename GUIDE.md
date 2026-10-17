@@ -24,7 +24,7 @@ Haze and log in. To use the DJ, add an API key from an AI provider in Settings.
 ## 1. Install
 
 Download the file for your system from the
-[Releases page](https://github.com/jeeplecreeple/haze/releases/latest).
+[Releases page](https://github.com/jeeplecreeple/haze/releases/latest). OR you could follow the steps below:
 
 ### Debian, Ubuntu, Mint, Pop!_OS
 
