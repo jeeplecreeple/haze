@@ -393,6 +393,8 @@ pub struct App {
     dj_opened: bool,
     pub speaking: bool,
     resume_after_speech: bool,
+    /// The system voice is missing (Linux without espeak-ng), so intros aren't spoken.
+    no_system_voice: bool,
 }
 
 fn err(e: anyhow::Error) -> String {
@@ -450,6 +452,7 @@ impl App {
             dj_opened: false,
             speaking: false,
             resume_after_speech: false,
+            no_system_voice: false,
             config,
         };
         let mut app = app;
@@ -801,6 +804,9 @@ impl App {
         let Some(audio) = self.audio.clone() else {
             return Task::none();
         };
+        if self.no_system_voice && self.config.dj.tts.engine == crate::config::TtsEngine::System {
+            return if music_playing { Task::none() } else { Task::done(Message::SpeechDone(Ok(()))) };
+        }
         self.speaking = true;
         self.resume_after_speech = !music_playing;
         if music_playing {
@@ -1177,8 +1183,14 @@ impl App {
                         audio.play();
                     }
                 }
-                if let Err(e) = result {
-                    self.notify(format!("DJ voice: {e}"), true);
+                match result {
+                    // Said once; after that the DJ just talks on screen.
+                    Err(e) if e == dj::tts::NO_SYSTEM_VOICE => {
+                        self.no_system_voice = true;
+                        self.notify(e, false);
+                    }
+                    Err(e) => self.notify(format!("DJ voice: {e}"), true),
+                    Ok(()) => {}
                 }
             }
 
@@ -1419,7 +1431,11 @@ impl App {
             MaxWords(v) => dj.max_words = v as usize,
             Discovery(v) => dj.discovery = v as u8,
             Explicit(v) => dj.allow_explicit = v,
-            TtsEngine(e) => dj.tts.engine = e,
+            // Try the system voice again, in case a speech program was installed since.
+            TtsEngine(e) => {
+                dj.tts.engine = e;
+                self.no_system_voice = false;
+            }
             Voice(s) => dj.tts.voice = s,
             TtsModel(s) => dj.tts.model = s,
             DuckTo(v) => dj.tts.duck_to = v as u8,

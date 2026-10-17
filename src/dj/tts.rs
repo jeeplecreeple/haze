@@ -9,6 +9,10 @@ use tokio::process::Command;
 
 use crate::config::{DjConfig, LlmProvider, TtsEngine, non_empty};
 
+/// The error when Linux has no speech program. The app then stops trying until it restarts.
+pub const NO_SYSTEM_VOICE: &str = "There's no speech program on this computer, so the DJ talks on screen for now. \
+    Install espeak-ng to hear it, or pick another voice in Settings > DJ.";
+
 pub async fn speak(config: &DjConfig, text: &str) -> Result<()> {
     match config.tts.engine {
         TtsEngine::System => system(config, text).await,
@@ -62,12 +66,10 @@ async fn system(config: &DjConfig, text: &str) -> Result<()> {
                 Err(e) => last_err = Some(e),
             }
         }
-        found.ok_or_else(|| {
-            anyhow!(
-                "No speech program found (install espeak-ng or speech-dispatcher), or switch the DJ voice to OpenAI-compatible TTS: {}",
-                last_err.map(|e| e.to_string()).unwrap_or_default()
-            )
-        })?
+        if found.is_none() {
+            log::warn!("no speech program: {}", last_err.map(|e| e.to_string()).unwrap_or_default());
+        }
+        found.ok_or_else(|| anyhow!(NO_SYSTEM_VOICE))?
     };
     if !status.success() {
         bail!("speech program exited with {status}");
