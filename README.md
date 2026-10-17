@@ -9,8 +9,8 @@ that runs on **your own** LLM API key.
   Spotify in-process (up to 320 kbps). Requires Spotify **Premium**.
 - **AI DJ.** Picks the next songs from your taste, your history and whatever mood you type in, and
   (optionally) introduces them like a radio host, as text or out loud.
-- **Bring your own model.** OpenAI, Anthropic Claude, Google Gemini, and anything OpenAI-compatible:
-  OpenRouter, Groq, Mistral, DeepSeek, xAI, Together, or a local Ollama / LM Studio.
+- **Bring your own model.** OpenAI, Anthropic Claude, Google Gemini, Mistral, Groq, OpenRouter,
+  DeepSeek, xAI, Cerebras, a local Ollama, or anything else OpenAI-compatible (Together, LM Studio...).
 - **Synced lyrics.** A karaoke-style lyrics view in the spirit of Spicy Lyrics: words light up as
   they're sung with a shine on the edge, lines glide into place, a blurred cover-art background,
   instrumental-break dots, click a line to jump there, full screen. Lyrics come from Spotify and

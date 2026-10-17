@@ -879,7 +879,7 @@ impl App {
             .align_y(Alignment::Center),
         ]
         .spacing(18);
-        if dj.api_key().is_none() && dj.provider != LlmProvider::OpenAI {
+        if dj.api_key().is_none() && dj.provider.needs_key() {
             hero = hero.push(self.muted("Add your API key in Settings to wake the DJ up."));
         }
         hero = hero.push(controls);

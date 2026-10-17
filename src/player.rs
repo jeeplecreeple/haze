@@ -130,11 +130,16 @@ impl Audio {
     pub async fn web_token(&self, settings: &PlaybackConfig) -> Result<String> {
         self.ensure_connected(settings).await?;
         let session = self.session.lock().expect("session lock").clone();
-        let token = session
-            .token_provider()
-            .get_token("playlist-read-private,playlist-read-collaborative,user-library-read")
-            .await
-            .map_err(|e| anyhow!("playback login token: {e}"))?;
+        // login5 is what Spotify's own apps use now. The older keymaster route refuses these
+        // scopes ("Invalid request"), so it's only a fallback.
+        let token = match session.login5().auth_token().await {
+            Ok(token) => token,
+            Err(login5) => session
+                .token_provider()
+                .get_token("playlist-read-private,playlist-read-collaborative,user-library-read")
+                .await
+                .map_err(|e| anyhow!("playback login token: {login5}; keymaster: {e}"))?,
+        };
         Ok(token.access_token)
     }
 

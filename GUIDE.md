@@ -140,18 +140,25 @@ either paste a key into **API key** or leave it empty and set the environment va
 | OpenAI | <https://platform.openai.com/api-keys> | `OPENAI_API_KEY` |
 | Anthropic (Claude) | <https://console.anthropic.com/settings/keys> | `ANTHROPIC_API_KEY` |
 | Google Gemini | <https://aistudio.google.com/apikey> | `GEMINI_API_KEY` |
+| Mistral | <https://console.mistral.ai/api-keys> | `MISTRAL_API_KEY` |
+| Groq (free tier) | <https://console.groq.com/keys> | `GROQ_API_KEY` |
+| OpenRouter (free models) | <https://openrouter.ai/keys> | `OPENROUTER_API_KEY` |
+| DeepSeek | <https://platform.deepseek.com/api_keys> | `DEEPSEEK_API_KEY` |
+| xAI (Grok) | <https://console.x.ai> | `XAI_API_KEY` |
+| Cerebras (free tier) | <https://cloud.cerebras.ai> | `CEREBRAS_API_KEY` |
+| Ollama (on your computer) | No key. Install from <https://ollama.com> and run `ollama pull llama3.2` | |
 
-Any **OpenAI-compatible** service works too: choose "OpenAI / compatible", set **API base URL**, and
-set **Model** to one of that service's model names.
+Each one already knows its address and a sensible model, so a key is all it needs. Groq, Cerebras
+and OpenRouter's free models cost nothing and are a good pick when Gemini is busy. OpenRouter's
+default model, `openrouter/free`, sends each request to whichever free model is available.
 
-| Service | API base URL |
-| --- | --- |
-| OpenRouter | `https://openrouter.ai/api/v1` |
-| Groq | `https://api.groq.com/openai/v1` |
-| Mistral | `https://api.mistral.ai/v1` |
-| DeepSeek | `https://api.deepseek.com/v1` |
-| Ollama (local, free, no key) | `http://localhost:11434/v1` |
-| LM Studio (local, free, no key) | `http://localhost:1234/v1` |
+If a model name stops working (providers retire old ones), Haze asks the provider which models it
+has and uses one of those. When a provider is overloaded, Haze waits and tries again twice before
+giving up.
+
+Any other **OpenAI-compatible** service works too: choose "OpenAI / compatible", set **API base
+URL**, and set **Model** to one of that service's model names. LM Studio, for example, is
+`http://localhost:1234/v1` and needs no key.
 
 Leave **Model** empty to use the provider's default, then click **Save settings**.
 

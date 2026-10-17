@@ -410,21 +410,52 @@ impl Default for Layout {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LlmProvider {
-    /// OpenAI, or any OpenAI-compatible API via `base_url`
-    /// (OpenRouter, Groq, Mistral, DeepSeek, xAI, Together, Ollama, LM Studio...).
+    /// OpenAI, or any other OpenAI-compatible API via `base_url` (Together, LM Studio...).
     OpenAI,
     Anthropic,
     Gemini,
+    // The rest speak the OpenAI API; they only differ in their defaults.
+    Mistral,
+    Groq,
+    OpenRouter,
+    DeepSeek,
+    Xai,
+    Cerebras,
+    /// Models running on your own computer. Needs no key.
+    Ollama,
 }
 
 impl LlmProvider {
-    pub const ALL: [LlmProvider; 3] = [LlmProvider::OpenAI, LlmProvider::Anthropic, LlmProvider::Gemini];
+    pub const ALL: [LlmProvider; 10] = [
+        LlmProvider::OpenAI,
+        LlmProvider::Anthropic,
+        LlmProvider::Gemini,
+        LlmProvider::Mistral,
+        LlmProvider::Groq,
+        LlmProvider::OpenRouter,
+        LlmProvider::DeepSeek,
+        LlmProvider::Xai,
+        LlmProvider::Cerebras,
+        LlmProvider::Ollama,
+    ];
+
+    /// False where a key is optional: local servers, or a custom OpenAI-compatible URL.
+    pub fn needs_key(self) -> bool {
+        !matches!(self, LlmProvider::OpenAI | LlmProvider::Ollama)
+    }
 
     pub fn default_model(self) -> &'static str {
         match self {
             LlmProvider::OpenAI => "gpt-4o-mini",
             LlmProvider::Anthropic => "claude-opus-5-5",
             LlmProvider::Gemini => "gemini-3.5-flash",
+            LlmProvider::Mistral => "mistral-small-latest",
+            LlmProvider::Groq => "openai/gpt-oss-120b",
+            LlmProvider::OpenRouter => "openrouter/free",
+            LlmProvider::DeepSeek => "deepseek-chat",
+            LlmProvider::Xai => "grok-4-1-fast-non-reasoning",
+            LlmProvider::Cerebras => "gpt-oss-120b",
+            LlmProvider::Ollama => "llama3.2",
         }
     }
 
@@ -433,6 +464,13 @@ impl LlmProvider {
             LlmProvider::OpenAI => "https://api.openai.com/v1",
             LlmProvider::Anthropic => "https://api.anthropic.com/v1",
             LlmProvider::Gemini => "https://generativelanguage.googleapis.com/v1beta",
+            LlmProvider::Mistral => "https://api.mistral.ai/v1",
+            LlmProvider::Groq => "https://api.groq.com/openai/v1",
+            LlmProvider::OpenRouter => "https://openrouter.ai/api/v1",
+            LlmProvider::DeepSeek => "https://api.deepseek.com",
+            LlmProvider::Xai => "https://api.x.ai/v1",
+            LlmProvider::Cerebras => "https://api.cerebras.ai/v1",
+            LlmProvider::Ollama => "http://localhost:11434/v1",
         }
     }
 
@@ -441,6 +479,13 @@ impl LlmProvider {
             LlmProvider::OpenAI => "OPENAI_API_KEY",
             LlmProvider::Anthropic => "ANTHROPIC_API_KEY",
             LlmProvider::Gemini => "GEMINI_API_KEY",
+            LlmProvider::Mistral => "MISTRAL_API_KEY",
+            LlmProvider::Groq => "GROQ_API_KEY",
+            LlmProvider::OpenRouter => "OPENROUTER_API_KEY",
+            LlmProvider::DeepSeek => "DEEPSEEK_API_KEY",
+            LlmProvider::Xai => "XAI_API_KEY",
+            LlmProvider::Cerebras => "CEREBRAS_API_KEY",
+            LlmProvider::Ollama => "OLLAMA_API_KEY",
         }
     }
 }
@@ -451,6 +496,13 @@ impl std::fmt::Display for LlmProvider {
             LlmProvider::OpenAI => "OpenAI / compatible",
             LlmProvider::Anthropic => "Anthropic (Claude)",
             LlmProvider::Gemini => "Google Gemini",
+            LlmProvider::Mistral => "Mistral",
+            LlmProvider::Groq => "Groq (free tier)",
+            LlmProvider::OpenRouter => "OpenRouter (free models)",
+            LlmProvider::DeepSeek => "DeepSeek",
+            LlmProvider::Xai => "xAI (Grok)",
+            LlmProvider::Cerebras => "Cerebras (free tier)",
+            LlmProvider::Ollama => "Ollama (on this computer)",
         })
     }
 }
@@ -654,6 +706,18 @@ pub fn non_empty(s: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_provider_saves_and_loads() {
+        for provider in LlmProvider::ALL {
+            let mut config = Config::default();
+            config.dj.provider = provider;
+            let back: Config = toml::from_str(&toml::to_string_pretty(&config).unwrap()).unwrap();
+            assert_eq!(back.dj.provider, provider);
+        }
+        let config: Config = toml::from_str("[dj]\nprovider = \"openrouter\"").unwrap();
+        assert_eq!(config.dj.provider, LlmProvider::OpenRouter);
+    }
 
     #[test]
     fn lyrics_provider_matches_its_sources() {

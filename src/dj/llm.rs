@@ -1,10 +1,12 @@
 //! Bring-your-own-key LLM providers. Each takes a system prompt and a user prompt and returns text.
 //!
-//! - OpenAI and anything OpenAI-compatible (OpenRouter, Groq, Mistral, DeepSeek, xAI, Together,
+//! - OpenAI and anything OpenAI-compatible (Mistral, Groq, OpenRouter, DeepSeek, xAI, Cerebras,
 //!   Ollama, LM Studio...) through `/chat/completions`.
 //! - Anthropic Claude through `/messages`.
 //! - Google Gemini through `:generateContent`.
 
+use std::collections::HashMap;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use anyhow::{Result, anyhow, bail};
@@ -15,12 +17,13 @@ use crate::config::{DjConfig, LlmProvider};
 pub async fn complete(config: &DjConfig, system: &str, user: &str) -> Result<String> {
     let http = reqwest::Client::builder().timeout(Duration::from_secs(120)).build()?;
     let key = config.api_key();
+    if key.is_none() && config.provider.needs_key() {
+        return Err(missing_key(config));
+    }
     match config.provider {
-        LlmProvider::OpenAI => openai(&http, config, key, system, user).await,
-        LlmProvider::Anthropic => {
-            anthropic(&http, config, key.ok_or_else(|| missing_key(config))?, system, user).await
-        }
-        LlmProvider::Gemini => gemini(&http, config, key.ok_or_else(|| missing_key(config))?, system, user).await,
+        LlmProvider::Anthropic => anthropic(&http, config, key.unwrap_or_default(), system, user).await,
+        LlmProvider::Gemini => gemini(&http, config, key.unwrap_or_default(), system, user).await,
+        _ => openai(&http, config, key, system, user).await,
     }
 }
 
@@ -29,19 +32,90 @@ fn missing_key(config: &DjConfig) -> anyhow::Error {
     anyhow!("No API key for the DJ. Set dj.api_key in settings, or the {var} environment variable.")
 }
 
+/// Sends the request, waiting and retrying a couple of times while the provider is overloaded
+/// (Gemini's "model is overloaded", 502/503/529s).
 async fn send(req: reqwest::RequestBuilder) -> Result<Value> {
-    let resp = req.send().await?;
+    let mut wait = Duration::from_secs(2);
+    for attempt in 0..3 {
+        let this = req.try_clone().ok_or_else(|| anyhow!("request can't be resent"))?;
+        match req_send(this).await {
+            Ok(result) => return result,
+            Err(Busy(msg)) if attempt < 2 => {
+                log::info!("DJ provider is busy ({msg}); retrying in {}s", wait.as_secs());
+                tokio::time::sleep(wait).await;
+                wait *= 3;
+            }
+            Err(Busy(msg)) => bail!(
+                "The AI provider is too busy right now ({msg}). Try again soon, or pick another provider in Settings > DJ."
+            ),
+        }
+    }
+    unreachable!()
+}
+
+struct Busy(String);
+
+async fn req_send(req: reqwest::RequestBuilder) -> std::result::Result<Result<Value>, Busy> {
+    let resp = match req.send().await {
+        Ok(resp) => resp,
+        Err(e) => return Ok(Err(e.into())),
+    };
     let status = resp.status();
     let body: Value = resp.json().await.unwrap_or(Value::Null);
-    if !status.is_success() {
-        let msg = body
-            .pointer("/error/message")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-            .unwrap_or_else(|| body.to_string());
-        bail!("LLM request failed ({status}): {msg}");
+    if status.is_success() {
+        return Ok(Ok(body));
     }
-    Ok(body)
+    let msg = body
+        .pointer("/error/message")
+        .or_else(|| body.get("message"))
+        .or_else(|| body.get("detail"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| body.to_string());
+    if matches!(status.as_u16(), 502 | 503 | 529) {
+        return Err(Busy(msg));
+    }
+    Ok(Err(anyhow!("LLM request failed ({status}): {msg}")))
+}
+
+/// Model names go stale (providers retire them), so when the configured one is refused we ask the
+/// server which models it has and use one of those. Remembered per base URL for this run.
+static MODEL_SUBSTITUTES: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
+
+fn substitute(base: &str) -> Option<String> {
+    MODEL_SUBSTITUTES.lock().ok()?.as_ref()?.get(base).cloned()
+}
+
+fn looks_like_bad_model(err: &anyhow::Error) -> bool {
+    let msg = err.to_string().to_lowercase();
+    msg.contains("model") && ["404", "not found", "not exist", "invalid", "decommissioned", "unknown"].iter().any(|w| msg.contains(w))
+}
+
+async fn pick_model(http: &reqwest::Client, base: &str, key: Option<&str>, wanted: &str) -> Option<String> {
+    let mut req = http.get(format!("{base}/models"));
+    if let Some(key) = key {
+        req = req.bearer_auth(key);
+    }
+    let list = req_send(req).await.ok()?.ok()?;
+    let ids: Vec<&str> = list
+        .get("data")
+        .or_else(|| list.get("models"))
+        .and_then(Value::as_array)?
+        .iter()
+        .filter_map(|m| m.get("id").or_else(|| m.get("name")).and_then(Value::as_str))
+        .filter(|id| {
+            let id = id.to_lowercase();
+            !["embed", "whisper", "tts", "audio", "image", "vision", "moderation", "guard", "ocr", "transcribe", "realtime"]
+                .iter()
+                .any(|w| id.contains(w))
+        })
+        .collect();
+    // Prefer something from the same family as what was asked for, then anything chat-like.
+    let family = wanted.split(['-', '/', ':']).next().unwrap_or(wanted).to_lowercase();
+    ids.iter()
+        .find(|id| id.to_lowercase().contains(&family))
+        .or_else(|| ids.first())
+        .map(|id| id.to_string())
 }
 
 async fn openai(
@@ -51,9 +125,11 @@ async fn openai(
     system: &str,
     user: &str,
 ) -> Result<String> {
-    let url = format!("{}/chat/completions", config.base_url());
+    let base = config.base_url();
+    let url = format!("{base}/chat/completions");
+    let model = substitute(&base).unwrap_or_else(|| config.model());
     let mut body = json!({
-        "model": config.model(),
+        "model": model,
         "temperature": config.temperature,
         "messages": [
             {"role": "system", "content": system},
@@ -70,12 +146,27 @@ async fn openai(
     };
     let resp = match send(build(&body)).await {
         Ok(v) => v,
+        Err(first) if looks_like_bad_model(&first) => {
+            let Some(other) = pick_model(http, &base, key.as_deref(), &model).await.filter(|m| *m != model) else {
+                return Err(first);
+            };
+            log::warn!("model {model} was refused ({first}); using {other} instead");
+            body["model"] = json!(other);
+            let resp = send(build(&body)).await.map_err(|_| first)?;
+            if let Ok(mut subs) = MODEL_SUBSTITUTES.lock() {
+                subs.get_or_insert_with(HashMap::new).insert(base.clone(), other);
+            }
+            resp
+        }
         // Some compatible servers don't support JSON mode or custom temperature; retry plainly.
         Err(first) => {
             let obj = body.as_object_mut().expect("object");
             obj.remove("response_format");
             obj.remove("temperature");
-            send(build(&body)).await.map_err(|_| first)?
+            send(build(&body)).await.map_err(|second| {
+                log::warn!("plain retry failed too: {second}");
+                first
+            })?
         }
     };
     resp.pointer("/choices/0/message/content")

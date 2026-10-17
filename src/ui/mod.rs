@@ -784,9 +784,16 @@ impl App {
                         // people's), so read it with the playback login instead.
                         Err(e) if e.to_string().contains("403") => {
                             let Some(audio) = audio else { return Err(e) };
-                            let token = audio.web_token(&settings).await?;
-                            api.playlist_tracks(&id, Some(&token)).await.map_err(|_| {
+                            let blocked = || {
                                 anyhow::anyhow!("Spotify won't let Haze open this playlist. Try saving its songs to a playlist of your own.")
+                            };
+                            let token = audio.web_token(&settings).await.map_err(|e| {
+                                log::warn!("couldn't get a playback login token for a 403 playlist: {e}");
+                                blocked()
+                            })?;
+                            api.playlist_tracks(&id, Some(&token)).await.map_err(|e| {
+                                log::warn!("playlist still refused with the playback login: {e}");
+                                blocked()
                             })
                         }
                         Err(e) => Err(e),
@@ -1497,7 +1504,14 @@ impl App {
             Sidebar(s) => self.config.layout.sidebar = s,
             SidePanel(s) => self.config.layout.side_panel = s,
             PlayerBar(e) => self.config.layout.player_bar = e,
-            Provider(p) => dj.provider = p,
+            Provider(p) if p != dj.provider => {
+                // A model or URL typed for the old provider would only make the new one fail.
+                dj.provider = p;
+                dj.model.clear();
+                dj.base_url.clear();
+                dj.api_key_env.clear();
+            }
+            Provider(_) => {}
             Model(s) => dj.model = s,
             BaseUrl(s) => dj.base_url = s,
             ApiKey(s) => dj.api_key = s,

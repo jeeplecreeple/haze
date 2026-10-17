@@ -65,18 +65,13 @@ lines_before = 2          # past lines kept on screen
 [covers]
 
 [dj]
-provider = "openai"       # openai (and any OpenAI-compatible API) | anthropic | gemini
-model = ""                # empty = gpt-4o-mini / claude-opus-5-5 / gemini-3.5-flash
-# Point the openai provider at any compatible API, for example:
-#   OpenRouter  https://openrouter.ai/api/v1
-#   Groq        https://api.groq.com/openai/v1
-#   Mistral     https://api.mistral.ai/v1
-#   DeepSeek    https://api.deepseek.com/v1
-#   Ollama      http://localhost:11434/v1   (no key needed)
-#   LM Studio   http://localhost:1234/v1    (no key needed)
+provider = "openai"       # openai | anthropic | gemini | mistral | groq | openrouter | deepseek | xai | cerebras | ollama
+model = ""                # empty = the provider's default (gpt-4o-mini, mistral-small-latest, openrouter/free...)
+# Empty = the provider's own address. Set it to point "openai" at any other compatible API,
+# for example LM Studio at http://localhost:1234/v1 (no key needed).
 base_url = ""
 api_key = ""              # stored in plain text here; api_key_env is the safer option
-api_key_env = ""          # empty = OPENAI_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY
+api_key_env = ""          # empty = the usual one, e.g. OPENAI_API_KEY, GROQ_API_KEY, MISTRAL_API_KEY
 mode = "talk"             # queue = only pick songs | talk = text intros | voice = spoken intros
 name = "Haz DJ"
 persona = "Warm, upbeat late-night radio host. Knows music history and loves a good segue."

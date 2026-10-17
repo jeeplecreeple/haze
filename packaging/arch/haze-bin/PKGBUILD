@@ -3,7 +3,7 @@
 # Maintainer: Haz
 pkgname=haze-bin
 _pkgname=haze
-pkgver=0.4.1
+pkgver=0.4.2
 pkgrel=1
 pkgdesc="Native, lightweight, customisable Spotify client with an AI DJ (prebuilt)"
 arch=('x86_64' 'aarch64')
