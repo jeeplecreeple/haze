@@ -1,7 +1,7 @@
 # Builds Haztify from the checkout this file sits in, so it also works while the repo is private:
 #   git clone https://github.com/jeeplecreeple/haztify
 #   cd haztify/packaging/arch
-#   makepkg -si
+#   makepkg -Csi
 # Maintainer: Haz
 pkgname=haztify
 pkgver=0.1.0

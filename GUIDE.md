@@ -43,7 +43,7 @@ There are two ways in. Both give you a normal pacman package, so `pacman -R hazt
 sudo pacman -S --needed base-devel git rust
 git clone https://github.com/jeeplecreeple/haztify
 cd haztify/packaging/arch
-makepkg -si
+makepkg -Csi
 ```
 
 `makepkg -si` compiles Haztify, runs its tests, installs any missing dependencies, and installs the
@@ -54,8 +54,11 @@ To update later:
 
 ```sh
 cd haztify && git pull
-cd packaging/arch && makepkg -si
+cd packaging/arch && makepkg -Csi
 ```
+
+`-C` clears out the previous build first. If a build ever fails with errors like
+`can't find crate`, run it again with `-C`; leftovers from an older build are the usual cause.
 
 **Prebuilt binary** (no compiling): `packaging/arch/haztify-bin/PKGBUILD` downloads the release build
 instead. Copy it into an empty folder and run `makepkg -si` there. This needs the GitHub repo to be
