@@ -6,11 +6,10 @@ Spotify only lets Premium accounts stream audio through third-party apps.
 **The short version:** install Haze, make a free Spotify developer app, paste its Client ID into
 Haze and log in. To use the DJ, add an API key from an AI provider in Settings.
 
-> [!NOTE]
-> The macOS and Windows builds haven't been tested on real machines yet. If you try one, please
-> [open an issue](https://github.com/jeeplecreeple/haze/issues/new) saying whether it worked.
-> Linux is where Haze is developed.
+### WARNING!
+Haze was built and tested on CachyOS. Please [Open a issue](https://github.com/jeeplecreeple/haze/issues) stating if it worked or not. Even if it did work, this is still appreciated.
 
+## Guide
 1. [Install](#1-install)
 2. [Create your Spotify app](#2-create-your-spotify-app)
 3. [Log in](#3-log-in)
