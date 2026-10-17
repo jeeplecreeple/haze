@@ -47,8 +47,9 @@ Get the latest build from [Releases](https://github.com/jeeplecreeple/haze/relea
 1. Create a free app at <https://developer.spotify.com/dashboard>.
    - Redirect URI: `http://127.0.0.1:8898/login` (exactly)
    - APIs: tick **Web API** and **Web Playback SDK**
-2. Start Haze, paste the app's **Client ID**, and log in in the browser window that opens.
-   Your login is cached, so next time it starts straight into your library.
+2. Start Haze. A short animated setup asks for the app's **Client ID**, lets you pick a theme
+   and the DJ's AI provider, and logs you in through the browser. Your login is cached, so next
+   time it starts straight into your library.
 3. To use the DJ, open **Settings → DJ**, pick a provider and add your API key (or set the usual
    environment variable such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` and
    leave the key field empty). Then hit **Start DJ**.
@@ -89,7 +90,7 @@ sync your dotfiles.
 `renderer = "cpu"` (default) uses the lightweight software renderer; `"gpu"` uses Vulkan, Metal or
 DirectX via wgpu, which is smoother on big/high-refresh screens but costs more memory.
 
-Set `HAZE_DEMO=1` (or `=tracks`, `=lyrics`, `=settings`) to open the UI with sample data and no login, handy
+Set `HAZE_DEMO=1` (or `=tracks`, `=lyrics`, `=settings`, `=setup`) to open the UI with sample data and no login, handy
 for trying themes and layouts.
 
 ## Building

@@ -28,7 +28,8 @@ pub const PRESETS: [&str; 9] = [
     "light",
 ];
 
-fn preset(name: &str) -> Colors {
+/// A built-in theme's colours.
+pub fn preset(name: &str) -> Colors {
     let c = |hex: &str| parse_hex(hex).unwrap_or(Color::BLACK);
     let (bg, surface, text, muted, accent, danger) = match name.to_ascii_lowercase().as_str() {
         "spotify" => ("#121212", "#181818", "#ffffff", "#b3b3b3", "#1db954", "#e22134"),

@@ -231,7 +231,12 @@ pub fn blurred_cover(bytes: &[u8], toward: Color) -> Option<image::Handle> {
     Some(image::Handle::from_rgba(w, h, img.into_raw()))
 }
 
-/// Opens a folder in the file manager.
+/// Opens a web page in the browser.
+pub fn open_url(url: &str) {
+    open_folder(Path::new(url));
+}
+
+/// Opens a folder in the file manager (or a URL in the browser).
 pub fn open_folder(path: &Path) {
     let program = if cfg!(target_os = "macos") {
         "open"

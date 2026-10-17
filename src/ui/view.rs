@@ -13,6 +13,8 @@ use crate::lyrics::{Line, Lyrics};
 use crate::queue::{Origin, Repeat};
 use crate::spotify::api::{Playlist, Track};
 
+mod setup;
+
 type El<'a> = Element<'a, Message>;
 
 fn mmss(ms: u32) -> String {
@@ -117,9 +119,10 @@ impl App {
     }
 
     pub fn view(&self) -> El<'_> {
-        let content: El = match self.login {
-            Login::LoggedIn => self.main_layout(),
-            _ => self.login_view(),
+        let content: El = match (&self.setup, &self.login) {
+            (Some(setup), _) => self.setup_view(setup),
+            (None, Login::LoggedIn) => self.main_layout(),
+            (None, _) => self.login_view(),
         };
         let mut root = Column::new();
         if let Some(notice) = &self.notice {
@@ -1121,6 +1124,7 @@ impl App {
             row![
                 self.primary_button(Some(icon::SAVE), "Save settings", Some(Message::SaveSettings)),
                 self.small_button(Some(icon::LOG_OUT), "Log out of Spotify", Message::Logout),
+                self.small_button(Some(icon::SPARKLES), "Run setup again", Message::RunSetup),
             ]
             .spacing(10)
             .align_y(Alignment::Center),

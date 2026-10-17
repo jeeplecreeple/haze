@@ -85,6 +85,59 @@ pub enum Page {
     Settings,
 }
 
+/// The steps of the first-run setup, in order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SetupStep {
+    Hello,
+    Look,
+    Spotify,
+    Dj,
+    Login,
+    Done,
+}
+
+impl SetupStep {
+    pub const ALL: [SetupStep; 6] = [Self::Hello, Self::Look, Self::Spotify, Self::Dj, Self::Login, Self::Done];
+
+    pub fn index(self) -> usize {
+        Self::ALL.iter().position(|s| *s == self).unwrap_or(0)
+    }
+}
+
+/// The animated first-run setup, shown until it's finished.
+#[derive(Debug, Clone)]
+pub struct Setup {
+    pub step: SetupStep,
+    /// When the step appeared, for its entrance animation.
+    pub entered: Instant,
+    /// The step was reached with Back, so it slides in from the other side.
+    pub backwards: bool,
+    /// When the Copy button last copied the redirect URI.
+    pub copied: Option<Instant>,
+}
+
+impl Setup {
+    fn new(step: SetupStep) -> Self {
+        Self { step, entered: Instant::now(), backwards: false, copied: None }
+    }
+
+    fn go(&mut self, step: SetupStep) {
+        self.backwards = step.index() < self.step.index();
+        self.step = step;
+        self.entered = Instant::now();
+    }
+
+    /// Whether anything on screen is still moving, so frames are only drawn while needed.
+    fn animating(&self, login: &Login) -> bool {
+        let age = self.entered.elapsed();
+        self.step == SetupStep::Hello
+            || age < Duration::from_millis(900)
+            || (self.step == SetupStep::Login && *login == Login::InProgress)
+            || (self.step == SetupStep::Done && age < Duration::from_millis(2500))
+            || self.copied.is_some_and(|t| t.elapsed() < Duration::from_millis(2200))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Login {
     NeedsClientId,
@@ -104,6 +157,14 @@ pub enum Message {
     Profile(Result<String, String>),
     Playlists(Result<Vec<Playlist>, String>),
     Logout,
+    SetupNext,
+    SetupBack,
+    SetupFinish,
+    RunSetup,
+    OpenUrl(&'static str),
+    CopyRedirectUri,
+    /// A redraw while something animates.
+    Frame,
 
     // Browsing
     Open(Page),
@@ -218,6 +279,7 @@ pub struct App {
     pub colors: Colors,
     theme: Theme,
     pub login: Login,
+    pub setup: Option<Setup>,
     pub client_id_input: String,
     api: Option<Api>,
     audio: Option<Arc<Audio>>,
@@ -275,6 +337,7 @@ impl App {
             theme: theme::iced_theme(&colors),
             colors,
             login: if has_client { Login::LoggedOut } else { Login::NeedsClientId },
+            setup: (!has_client).then(|| Setup::new(SetupStep::Hello)),
             client_id_input: config.spotify.client_id.clone(),
             api: None,
             audio: None,
@@ -317,7 +380,22 @@ impl App {
         };
         let mut app = app;
         app.refresh_theme_names();
-        if std::env::var_os("HAZE_DEMO").is_some() {
+        let demo = std::env::var("HAZE_DEMO").ok();
+        // HAZE_DEMO=setup (or setup-look, setup-spotify, setup-dj, setup-login, setup-done) shows the setup.
+        if let Some(step) = demo.as_deref().and_then(|d| d.strip_prefix("setup")) {
+            let step = match step {
+                "-look" => SetupStep::Look,
+                "-spotify" => SetupStep::Spotify,
+                "-dj" => SetupStep::Dj,
+                "-login" => SetupStep::Login,
+                "-done" => SetupStep::Done,
+                _ => SetupStep::Hello,
+            };
+            app.user_name = "Haz".into();
+            app.setup = Some(Setup::new(step));
+            return (app, Task::none());
+        }
+        if demo.is_some() {
             app.load_demo();
             return (app, Task::none());
         }
@@ -339,6 +417,15 @@ impl App {
 
     fn subscription(&self) -> Subscription<Message> {
         let mut subs = vec![Subscription::run(player_events), keyboard::listen().map(Message::Key)];
+        if let Some(setup) = self.setup.as_ref().filter(|s| s.animating(&self.login)) {
+            // Slides get every frame; the slower loops (the hello, waiting dots) run at 30 fps,
+            // which looks the same and costs half the CPU.
+            if setup.entered.elapsed() < Duration::from_millis(900) {
+                subs.push(window::frames().map(|_| Message::Frame));
+            } else {
+                subs.push(iced::time::every(Duration::from_millis(33)).map(|_| Message::Frame));
+            }
+        }
         // Redraw often enough for the word highlight, only while synced lyrics are on screen.
         if self.page == Page::Lyrics && self.playing && self.lyrics.as_ref().is_some_and(|l| l.synced) {
             let every = if self.config.lyrics.word_highlight { 90 } else { 250 };
@@ -452,6 +539,43 @@ impl App {
         if let Err(e) = self.config.save() {
             self.notify(format!("Couldn't save config: {e:#}"), true);
         }
+    }
+
+    /// Moves the setup on, saving what each step collected.
+    fn setup_next(&mut self) -> Task<Message> {
+        let Some(step) = self.setup.as_ref().map(|s| s.step) else { return Task::none() };
+        let next = match step {
+            SetupStep::Hello => SetupStep::Look,
+            SetupStep::Look => SetupStep::Spotify,
+            SetupStep::Spotify => {
+                let id = self.client_id_input.trim().to_string();
+                if id.is_empty() {
+                    return Task::none();
+                }
+                if id != self.config.spotify.client_id && self.login == Login::LoggedIn {
+                    // A different Spotify app means logging in again.
+                    let _ = self.update(Message::Logout);
+                }
+                self.config.spotify.client_id = id;
+                if self.login == Login::NeedsClientId {
+                    self.login = Login::LoggedOut;
+                }
+                SetupStep::Dj
+            }
+            SetupStep::Dj if self.login == Login::LoggedIn => SetupStep::Done,
+            SetupStep::Dj => SetupStep::Login,
+            SetupStep::Login => return Task::done(Message::Login),
+            SetupStep::Done => return Task::done(Message::SetupFinish),
+        };
+        if step != SetupStep::Hello
+            && let Err(e) = self.config.save()
+        {
+            self.notify(format!("Couldn't save settings: {e:#}"), true);
+        }
+        if let Some(setup) = &mut self.setup {
+            setup.go(next);
+        }
+        Task::none()
     }
 
     fn notify(&mut self, text: impl Into<String>, error: bool) {
@@ -660,6 +784,9 @@ impl App {
             }
             Message::LoggedIn(Ok(api)) => {
                 self.login = Login::LoggedIn;
+                if let Some(setup) = self.setup.as_mut().filter(|s| s.step == SetupStep::Login) {
+                    setup.go(SetupStep::Done);
+                }
                 self.api = Some(api.clone());
                 let tx = PLAYER_TX.get().expect("player channel").clone();
                 let (a1, a2) = (api.clone(), api.clone());
@@ -696,6 +823,33 @@ impl App {
                 self.queue = Queue::default();
                 self.login = Login::LoggedOut;
             }
+            Message::SetupNext => return self.setup_next(),
+            Message::SetupBack => {
+                if let Some(setup) = &mut self.setup
+                    && let Some(i) = setup.step.index().checked_sub(1)
+                {
+                    setup.go(SetupStep::ALL[i]);
+                }
+            }
+            Message::SetupFinish => {
+                self.setup = None;
+                if self.login != Login::LoggedIn {
+                    self.login = if self.config.spotify.client_id.trim().is_empty() {
+                        Login::NeedsClientId
+                    } else {
+                        Login::LoggedOut
+                    };
+                }
+            }
+            Message::RunSetup => self.setup = Some(Setup::new(SetupStep::Hello)),
+            Message::OpenUrl(url) => custom::open_url(url),
+            Message::CopyRedirectUri => {
+                if let Some(setup) = &mut self.setup {
+                    setup.copied = Some(Instant::now());
+                }
+                return iced::clipboard::write(self.config.spotify.redirect_uri.clone());
+            }
+            Message::Frame => {}
 
             Message::Open(page) => return self.load_page(page),
             Message::Tracks(page, result) => {

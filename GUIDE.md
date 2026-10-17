@@ -104,9 +104,13 @@ The Client ID isn't a password. Haze logs in with PKCE, which doesn't need a cli
 
 ## 3. Log in
 
-1. Start Haze and paste the Client ID into the welcome screen.
-2. Click **Save and log in**. Your browser opens Spotify's login page; approve the permissions.
-3. When the browser says Haze is logged in, go back to the app.
+The first time you start Haze, a short setup walks you through it: after the hello, pick a theme,
+paste the Client ID from step 2, add a DJ key if you like (or **Set up later**), and click
+**Log in with Spotify**. Your browser opens Spotify's login page; approve the permissions, then
+go back to Haze. The setup links to the Spotify dashboard and has a **Copy** button for the
+Redirect URI, so you can do step 2 from there too.
+
+**Settings → Run setup again** brings the setup back whenever you want.
 
 Haze remembers the login, so later launches go straight to your library. **Settings → Log out
 of Spotify** forgets it.
