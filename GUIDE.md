@@ -3,128 +3,133 @@
 This guide takes you from download to your first DJ set. You need **Spotify Premium**, because
 Spotify only lets Premium accounts stream audio through third-party apps.
 
-> ⚠️ **macOS and Windows builds are not tested yet.** They compile in CI, but nobody has played
-> music with them so far. If you try one, please
-> [open an issue](https://github.com/jeeplecreeple/haztify/issues/new) saying whether it worked,
-> even if it did. Linux is the platform it was developed on.
+**The short version:** install Haztify, make a free Spotify developer app, paste its Client ID into
+Haztify and log in. To use the DJ, add an API key from an AI provider in Settings.
 
-- [1. Install](#1-install)
-- [2. Create your Spotify app](#2-create-your-spotify-app-one-time)
-- [3. Log in](#3-log-in)
-- [4. Find your music](#4-find-your-music)
-- [5. Set up the DJ](#5-set-up-the-dj)
-- [6. Lyrics](#6-lyrics)
-- [7. Make it yours](#7-make-it-yours)
-- [8. Troubleshooting](#8-troubleshooting)
+> [!NOTE]
+> The macOS and Windows builds haven't been tested on real machines yet. If you try one, please
+> [open an issue](https://github.com/jeeplecreeple/haztify/issues/new) saying whether it worked.
+> Linux is where Haztify is developed.
+
+1. [Install](#1-install)
+2. [Create your Spotify app](#2-create-your-spotify-app)
+3. [Log in](#3-log-in)
+4. [Play your music](#4-play-your-music)
+5. [Set up the DJ](#5-set-up-the-dj)
+6. [Lyrics](#6-lyrics)
+7. [Make it yours](#7-make-it-yours)
+8. [Keyboard shortcuts](#8-keyboard-shortcuts)
+9. [Troubleshooting](#9-troubleshooting)
 
 ## 1. Install
 
 Download the file for your system from the
 [Releases page](https://github.com/jeeplecreeple/haztify/releases/latest).
 
-### Linux
+### Debian, Ubuntu, Mint, Pop!_OS
 
-| Distro | File | How |
-| --- | --- | --- |
-| Debian, Ubuntu, Mint, Pop!_OS | `haztify-linux-x86_64.deb` (or `-arm64`) | `sudo apt install ./haztify-linux-x86_64.deb` |
-| Arch, Manjaro, EndeavourOS, CachyOS | see [Arch Linux](#arch-linux) below | `makepkg -si` |
-| Fedora, openSUSE, anything else | `haztify-linux-x86_64.tar.gz` | Extract it and run `./haztify/haztify` |
+Download `haztify-linux-x86_64.deb` (or `haztify-linux-arm64.deb` on ARM), then run this in the
+folder you downloaded it to:
 
-Linux needs ALSA (`alsa-lib` / `libasound2`), which almost every desktop already has. PipeWire and
-PulseAudio both work through it.
+```sh
+sudo apt install ./haztify-linux-x86_64.deb
+```
 
-### Arch Linux
+### Arch, Manjaro, EndeavourOS, CachyOS
 
-There are two ways in. Both give you a normal pacman package, so `pacman -R haztify` removes it.
-
-**Build from source** (works today, takes a few minutes the first time):
+This builds Haztify from source into a normal pacman package. It takes a few minutes the first time.
 
 ```sh
 sudo pacman -S --needed base-devel git rust
-git clone https://github.com/jeeplecreeple/haztify
-cd haztify/packaging/arch
+git clone https://github.com/jeeplecreeple/haztify ~/haztify
+cd ~/haztify/packaging/arch
 makepkg -Csi
 ```
 
-`makepkg -si` compiles Haztify, runs its tests, installs any missing dependencies, and installs the
-package. Haztify then shows up in your app launcher. If you use `rustup` instead of the `rust`
-package, skip `rust` in the first line.
+Haztify then shows up in your app launcher. If you use `rustup`, leave `rust` out of the first line.
+For spoken DJ intros with the system voice, also install `espeak-ng`.
 
 To update later:
 
 ```sh
-cd haztify && git pull
-cd packaging/arch && makepkg -Csi
+cd ~/haztify
+git pull
+cd packaging/arch
+makepkg -Csi
 ```
 
-`-C` clears out the previous build first. If a build ever fails with errors like
-`can't find crate`, run it again with `-C`; leftovers from an older build are the usual cause.
+`git pull` only works inside the `haztify` folder, which is why the first line goes there. The `-C`
+starts each build fresh, which avoids errors like `can't find crate` from an older build.
 
-**Prebuilt binary** (no compiling): `packaging/arch/haztify-bin/PKGBUILD` downloads the release build
-instead. Copy it into an empty folder and run `makepkg -si` there. This needs the GitHub repo to be
-public, because it downloads from the Releases page.
+To remove Haztify, run `sudo pacman -R haztify`.
 
-For spoken DJ intros with the system voice, also run `sudo pacman -S espeak-ng`.
+### Fedora, openSUSE and other Linux
 
-### macOS (untested)
+Download `haztify-linux-x86_64.tar.gz`, extract it, and run `./haztify/haztify`. Haztify needs ALSA
+(`alsa-lib` or `libasound2`), which almost every desktop already has; PipeWire and PulseAudio both
+work through it.
+
+### macOS
 
 1. Download `haztify-macos-arm64.zip` for Apple Silicon (M1 and later) or `haztify-macos-x86_64.zip`
    for Intel Macs, and unzip it.
 2. Drag **Haztify.app** into **Applications**.
-3. The app isn't notarized by Apple, so the first launch is blocked. Right-click **Haztify.app**,
+3. Apple hasn't notarized the app, so the first launch is blocked. Right-click **Haztify.app**,
    choose **Open**, then **Open** again. If macOS still refuses, run this once in Terminal:
    `xattr -dr com.apple.quarantine /Applications/Haztify.app`
 
-### Windows (untested)
+### Windows
 
-1. Download `haztify-windows-x86_64.zip` and extract it anywhere, for example into
+1. Download `haztify-windows-x86_64.zip` and extract it anywhere, for example
    `C:\Users\<you>\Apps\haztify`.
-2. Run `haztify.exe`. SmartScreen may warn that the app is unrecognised, because it isn't signed.
+2. Run `haztify.exe`. SmartScreen may warn that the app isn't recognised, because it isn't signed.
    Choose **More info**, then **Run anyway**.
 
 ### Build it yourself
 
 See [Building](README.md#building) in the README. Always build with `cargo build --release --locked`.
 
-## 2. Create your Spotify app (one time)
+## 2. Create your Spotify app
 
-Haztify logs in through a free developer app that belongs to you, so no one else's app or server sits
-between you and Spotify.
+You only do this once. Haztify logs in through a free developer app that belongs to you, so no one
+else's app or server sits between you and Spotify.
 
 1. Go to <https://developer.spotify.com/dashboard> and log in.
-2. Click **Create app**. Fill in any name and description, for example "Haztify".
+2. Click **Create app**. Any name and description will do, for example "Haztify".
 3. Under **Redirect URIs**, add exactly `http://127.0.0.1:8898/login` and click **Add**.
 4. Under **Which API/SDKs are you planning to use?**, tick **Web API** and **Web Playback SDK**.
-5. Save, open the app's **Settings**, and copy the **Client ID**.
+5. Click **Save**, open the app's **Settings**, and copy the **Client ID**.
 
-The Client ID isn't a password; Haztify uses a login method (PKCE) that doesn't need a client secret.
+The Client ID isn't a password. Haztify logs in with PKCE, which doesn't need a client secret.
 
 ## 3. Log in
 
 1. Start Haztify and paste the Client ID into the welcome screen.
 2. Click **Save and log in**. Your browser opens Spotify's login page; approve the permissions.
-3. When the browser says "Haztify is logged in", go back to the app.
+3. When the browser says Haztify is logged in, go back to the app.
 
-Haztify remembers the login, so later launches go straight to your library. Use **Settings → Log
-out of Spotify** to forget it.
+Haztify remembers the login, so later launches go straight to your library. **Settings → Log out
+of Spotify** forgets it.
 
-## 4. Find your music
+## 4. Play your music
 
-- **Liked Songs** and your **playlists** are in the sidebar.
-- **Search** (`Ctrl+F`) finds songs.
-- Click a song to play it and the rest of the list after it.
-- **↪** plays a song next; **+** adds it to the end of the queue.
-- The **Up next** panel (`Ctrl+B`) shows the queue. Click a song there to jump to it, or **✕** to remove it.
-- The player bar has shuffle, previous, play/pause, next, repeat (off, all, one), the seek bar and volume.
+- **Liked Songs** and your playlists are in the sidebar. **Search** finds any song.
+- Click a song to play it, followed by the rest of the list.
+- Each song has two buttons on the right: the bent arrow plays it next, and the list-with-a-plus
+  adds it to the end of the queue.
+- The queue button in the player bar (or `Ctrl+B`) shows what's playing and what's next. Click a
+  song there to jump to it, or the **×** next to it to remove it. **Clear** empties the queue.
+- The player bar has shuffle, previous, play/pause, next, repeat (off, all, one), the seek bar and
+  volume. On the right are buttons for lyrics, the DJ and the queue.
 
 ## 5. Set up the DJ
 
 The DJ uses an AI model you choose, with your own API key, to pick songs and talk between them.
 
-### Pick a provider and add a key
+### Add an API key
 
-Open **Settings → DJ**, choose a **Provider**, then either paste a key into **API key** or leave it
-empty and set the environment variable shown.
+Open **Settings** (the gear at the bottom of the sidebar), choose a **Provider** under **DJ**, and
+either paste a key into **API key** or leave it empty and set the environment variable below.
 
 | Provider | Where to get a key | Environment variable |
 | --- | --- | --- |
@@ -144,87 +149,89 @@ set **Model** to one of that service's model names.
 | Ollama (local, free, no key) | `http://localhost:11434/v1` |
 | LM Studio (local, free, no key) | `http://localhost:1234/v1` |
 
-Leave **Model** empty to use the provider's default. Click **Save settings** when you're done.
+Leave **Model** empty to use the provider's default, then click **Save settings**.
 
-On macOS, apps opened from Finder don't see environment variables set in your shell, so paste the
+On macOS, apps opened from Finder don't see environment variables from your shell, so paste the
 key into Settings instead.
 
 ### Start a set
 
-1. Open **DJ** in the sidebar.
-2. Optionally type a mood, like "rainy Sunday jazz" or "2000s pop-punk, no ballads".
-3. Click **Start DJ** (or press `Ctrl+D`).
+1. Click **DJ** in the sidebar.
+2. If you like, type a mood, such as "rainy Sunday jazz" or "2000s pop-punk, no ballads".
+3. Click **Start DJ**, or press `Ctrl+D`.
 
-The DJ looks at your top tracks, top artists and recent plays, picks a set, and starts playing. Its
-songs are marked **✦** in the queue, and it tops the queue up by itself. Type a new mood and click
-**New set** to change direction, or **Stop** to switch it off.
+The DJ looks at your top tracks, top artists and recent plays, picks a set and starts playing. Its
+picks have a small sparkle in the queue, and it tops the queue up by itself. Type a new mood and
+click **New set** to change direction, or **Stop** to switch it off.
 
-### What it does
+### Choose what it does
 
 **What the DJ does** has three choices:
 
 - **Only queue songs**: it picks music and stays quiet.
-- **Queue + text intros**: it writes short radio-style intros, shown under **On air**.
+- **Queue + text intros**: it writes short radio-style intros, shown on the DJ page under **On air**.
 - **Queue + spoken intros**: it reads the intros aloud over the music.
 
-The other DJ settings:
-
-| Setting | Effect |
+| Setting | What it changes |
 | --- | --- |
 | Songs per set | How many songs it adds each time |
-| Refill when queue has | It asks for more when this few songs are left |
-| Talk every Nth song | 1 = before every song, 3 = every third song |
+| Refill when queue has | It picks more when this few songs are left |
+| Talk every Nth song | 1 means before every song, 3 means every third song |
 | Max words per intro | Keeps it brief |
-| Discovery | 0 = your favourites, 100 = all new to you |
-| Personality, DJ name, Language | Its voice and style |
-| Explicit songs | Off filters explicit tracks out |
+| Discovery | 0 means your favourites, 100 means music that's new to you |
+| DJ name, Personality, Language | Its voice and style |
+| Explicit songs | Off leaves explicit tracks out |
 
 ### Spoken intros
 
-- **System voice** (default) uses your computer's built-in speech: `say` on macOS, Windows' own
-  voices, and on Linux `espeak-ng` or `spd-say` (install one, e.g. `sudo apt install espeak-ng`).
-  **Voice** takes a voice name your system knows, or leave it empty for the default.
+Choose the **Voice engine** under **DJ voice**:
+
+- **System voice** (the default) uses your computer's built-in speech: `say` on macOS, Windows' own
+  voices, and `espeak-ng` or `spd-say` on Linux (install one, for example
+  `sudo apt install espeak-ng`). Leave **Voice** empty for the default voice, or type the name of
+  one your system has.
 - **OpenAI-compatible TTS** sounds much more natural. It uses your OpenAI key, and **Voice** can be
   `alloy`, `nova`, `onyx`, `shimmer` and others.
-- **Music volume while talking** lowers the music under the voice. Set it to 0 to pause instead.
+
+**Music volume while talking** turns the music down under the voice. Set it to 0 to pause instead.
 
 ### What it costs
 
-Each set is one request to your provider plus a few Spotify searches. With a small model that is a
-fraction of a cent. Larger models cost more per set; check your provider's pricing. Local models
+Each set is one request to your AI provider plus a few Spotify searches. With a small model that's
+a fraction of a cent; larger models cost more, so check your provider's pricing. Local models
 through Ollama or LM Studio are free.
 
 ## 6. Lyrics
 
-Click **♪** in the player bar, **♪ Lyrics** in the sidebar, or press `Ctrl+L`. Press it again to go
-back to where you were.
+Click the microphone in the player bar, **Lyrics** in the sidebar, or press `Ctrl+L`. Do it again to
+go back to where you were.
 
-- The line being sung is bold, and each word lights up as it's sung.
-- Click any line to jump the song there.
+- The line being sung is big and bright, and each word lights up as it's sung.
+- Click any line to jump the song to it.
 - Long instrumental breaks show three dots that fill up until the singing starts again.
-- **⛶ Full screen** hides everything but the lyrics and the player bar. `Esc` leaves it.
+- **Full screen** hides everything except the lyrics and the player bar. `Esc` leaves it.
 
-Haztify asks Spotify for the lyrics first and then [LRCLIB](https://lrclib.net), a free community
+Haztify asks Spotify for lyrics first and then [LRCLIB](https://lrclib.net), a free community
 database, so songs Spotify has no lyrics for often still get them. When only plain lyrics exist,
 they're shown without the highlight.
 
-**Settings → Lyrics** has the options: word-by-word highlight, the blurred cover background,
-left or centred lines, the lyrics font and size, how many past lines stay on screen, and a timing
-offset if the lyrics run early or late for you.
+**Settings → Lyrics** has the options: word-by-word highlight, the blurred cover background, left
+or centred lines, the lyrics font and size, how many past lines stay on screen, and a timing offset
+for lyrics that run early or late.
 
 ## 7. Make it yours
 
-**Settings → Appearance and Layout** covers the common options and applies them immediately; click
-**Save settings** to keep them. Everything else is in the config file, whose path is shown at the
-top of Settings:
+**Settings → Appearance** and **Layout** cover the common options and apply them straight away;
+click **Save settings** to keep them. Everything else is in the config file, whose path is shown at
+the top of Settings:
 
-| OS | Config file |
+| System | Config file |
 | --- | --- |
 | Linux | `~/.config/haztify/config.toml` |
 | macOS | `~/Library/Application Support/haztify/config.toml` |
 | Windows | `%APPDATA%\haztify\config\config.toml` |
 
-[`config.example.toml`](config.example.toml) lists every option with comments. Some favourites:
+[`config.example.toml`](config.example.toml) lists every option with comments. A few favourites:
 
 ```toml
 [appearance]
@@ -240,19 +247,15 @@ accent = "#1db954"          # override any theme colour
 sidebar = "right"
 player_bar = "top"
 track_columns = ["title", "artist", "duration"]
-
-[keys]
-play_pause = "space"
 ```
 
-Font family, text size and window size apply after a restart. Edit the file while Haztify is closed,
-because the Settings page saves over it.
+The app font, text size and window size apply after a restart. Close Haztify before editing the
+file, because saving in Settings writes over it.
 
 ### Your own theme
 
-**Settings → Appearance → Open folder** opens the folder next to the config file. Make a `themes`
-folder there (Haztify creates it the first time you click the button) and add a file such as
-`themes/ocean.toml`:
+**Settings → Appearance → Open folder** opens Haztify's config folder. Add a `themes` folder there
+(Haztify makes it the first time you click the button) with a file such as `themes/ocean.toml`:
 
 ```toml
 base = "apple-music-dark"   # the built-in theme to start from
@@ -267,41 +270,57 @@ accent colour follow whatever is playing.
 
 ### Your own fonts
 
-Haztify ships with [Inter](https://rsms.me/inter/) for the app and Inter Display ExtraBold for
-lyrics, so it looks the same on every system. Pick **System font** to use your desktop's font
-instead.
+Haztify comes with [Inter](https://rsms.me/inter/) for the app and Inter Display ExtraBold for
+lyrics, so it looks the same everywhere. Pick **System font** to use your desktop's font instead.
 
-Click **Add font file…** and pick a `.ttf` or `.otf` file. Haztify copies it into its `fonts`
-folder and adds it to the **App font** and **Lyrics font** lists. The lyrics font changes right
-away; the app font changes after a restart. Any font installed on your system works too: type its
+**Add font file…** takes a `.ttf` or `.otf` file. Haztify copies it into its `fonts` folder and adds
+it to the **App font** and **Lyrics font** lists. Fonts installed on your system work too: type the
 name under **…or an installed font**.
 
 ### Your own app icon
 
-**Settings → Appearance → App icon → Choose image…** takes a PNG or JPG (square works best). It
-becomes the window and taskbar icon straight away. On Linux Haztify also writes a menu entry for
-you (`~/.local/share/applications/haztify.desktop`) so the launcher and Wayland docks use it too.
-On macOS this only changes the window icon; to change the Dock icon, select Haztify.app in Finder,
-choose **Get Info**, and paste your image onto the small icon at the top. **Reset** goes back to
-the built-in icon.
+**Settings → Appearance → App icon → Choose image…** takes a PNG or JPG; square works best. It
+becomes the window and taskbar icon straight away. On Linux, Haztify also writes a menu entry
+(`~/.local/share/applications/haztify.desktop`) so your launcher and dock use it too. On macOS this
+only changes the window icon: to change the Dock icon, select Haztify.app in Finder, choose
+**Get Info**, and paste your image onto the small icon at the top. **Reset** brings back the
+built-in icon.
 
 ### Your own playlist covers
 
-Open a playlist or Liked Songs and click **Change cover…** to use any image as its cover in
-Haztify. This only changes it in Haztify, not on Spotify. **Reset cover** puts Spotify's back.
+Open a playlist or Liked Songs and click **Change cover…** to use any image as its cover. This only
+changes it in Haztify, not on Spotify. **Reset cover** brings Spotify's back.
 
-## 8. Troubleshooting
+## 8. Keyboard shortcuts
+
+| Keys | Does |
+| --- | --- |
+| `Ctrl+Space` | Play or pause |
+| `Ctrl+→` / `Ctrl+←` | Next or previous song |
+| `Shift+→` / `Shift+←` | Skip forward or back within the song |
+| `Ctrl+↑` / `Ctrl+↓` | Volume up or down |
+| `Ctrl+F` | Search |
+| `Ctrl+B` | Show or hide the queue |
+| `Ctrl+D` | Start the DJ |
+| `Ctrl+L` | Lyrics |
+| `Esc` | Leave full screen |
+
+You can change any of them under `[keys]` in the config file.
+
+## 9. Troubleshooting
 
 | Problem | Fix |
 | --- | --- |
 | "INVALID_CLIENT: Invalid redirect URI" in the browser | The redirect URI on your Spotify app must be exactly `http://127.0.0.1:8898/login`. |
-| Login says the address is in use | Something else uses port 8898. Close it, or change `redirect_uri` in the config and on your Spotify app to another port. |
+| Login says the address is in use | Something else is using port 8898. Close it, or change `redirect_uri` in the config file and on your Spotify app to another port. |
 | "Premium is required" or nothing plays | Playback needs Spotify Premium on the account you logged in with. |
-| Spotify returns 403 for your account | In development mode, your Spotify app only works for accounts listed under **User Management** on the dashboard. Add your account's email there. |
-| "No API key for the DJ" | Add the key in Settings, or set the environment variable from the table above and restart. |
-| DJ says its picks couldn't be found | The model named songs Spotify doesn't have. Try again, or try a larger model. |
+| Spotify returns 403 for your account | Your Spotify app is in development mode, which only allows accounts listed under **User Management** on the dashboard. Add your account's email there. |
+| "No API key for the DJ" | Add the key in Settings, or set the environment variable from [the table above](#add-an-api-key) and restart. |
+| The DJ says its picks couldn't be found | The model named songs Spotify doesn't have. Try again, or use a larger model. |
 | No spoken intros on Linux | Install `espeak-ng` or `speech-dispatcher`, or switch to OpenAI-compatible TTS. |
-| **Choose image…** or **Add font file…** does nothing (Linux) | The file picker comes from your desktop's portal. GNOME and KDE have one; on other setups install `xdg-desktop-portal` plus a backend such as `xdg-desktop-portal-gtk`. |
-| No lyrics for a song | Neither Spotify nor LRCLIB has them. Lyrics that run early or late can be fixed with **Timing offset** in Settings → Lyrics. |
-| Window is blank or flickers | Set `renderer = "cpu"` under `[appearance]` (the default). If you set `"gpu"`, your graphics driver may not support it. |
-| Something else | Run Haztify from a terminal with `RUST_LOG=haztify=debug` to see what it's doing, and include that output in an [issue](https://github.com/jeeplecreeple/haztify/issues/new). |
+| **Choose image…** or **Add font file…** does nothing (Linux) | The file picker comes from your desktop's portal. GNOME and KDE have one; elsewhere install `xdg-desktop-portal` and a backend such as `xdg-desktop-portal-gtk`. |
+| No lyrics for a song | Neither Spotify nor LRCLIB has them. For lyrics that run early or late, use **Timing offset** in Settings → Lyrics. |
+| `fatal: not a git repository` | Run `cd ~/haztify` first, then try again. |
+| `can't find crate` while building on Arch | Build with `makepkg -Csi`, which starts fresh. |
+| The window is blank or flickers | Set `renderer = "cpu"` under `[appearance]` (the default). `"gpu"` needs a graphics driver that supports it. |
+| Something else | Run Haztify from a terminal with `RUST_LOG=haztify=debug` and include what it prints in an [issue](https://github.com/jeeplecreeple/haztify/issues/new). |
