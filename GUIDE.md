@@ -493,7 +493,8 @@ Media keys always work. On macOS, `Ctrl` in a shortcut also means `Cmd`.
 | No spoken intros | Haze says so once and the DJ talks on screen instead. Install Piper (see [Spoken intros](#spoken-intros)) and choose it again in Settings, or install `espeak-ng` (`sudo pacman -S espeak-ng` on Arch). |
 | The DJ's picks are poor or it often fails | Switch the provider to Groq or Ollama, which usually work best. |
 | "Haze couldn't open a file picker" (Linux) | The file picker comes from your desktop's portal. GNOME and KDE have one; elsewhere (Hyprland, Sway, i3) install `xdg-desktop-portal-gtk`, or `zenity`. Until then, drag the file onto the Haze window. |
-| A playlist says Spotify won't let Haze open it | Spotify blocks developer apps from some playlists (its own mixes, and some made by other people). Haze retries with its playback login, which usually works; if it doesn't, save the songs to a playlist of your own. |
+| A playlist says Spotify won't let Haze open it | Spotify only shows developer apps the playlists you own or help edit. For anyone else's (and Spotify's own mixes) Haze reads the playlist through its playback login instead, the way Spotify's own app does, so playback has to be connected first. If it still won't open, save the songs to a playlist of your own. |
+| Other people's playlists are slow to open | From 0.5.2 the first songs show straight away and the rest fill in below ("Loading more songs…"). The second visit is quicker, because Haze remembers which playlists need the playback login. |
 | No lyrics for a song | Neither Spotify nor LRCLIB has them. For lyrics that run early or late, use **Timing offset** in Settings → Lyrics. |
 | `fatal: not a git repository` | Run `cd ~/haze` first, then try again. |
 | `can't find crate` while building on Arch | Build with `makepkg -Csi`, which starts fresh. |

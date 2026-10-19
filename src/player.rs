@@ -127,6 +127,19 @@ impl Audio {
         Ok(bytes.to_vec())
     }
 
+    /// A playlist's song links, read through the playback login (see `spotify::lists`).
+    pub async fn playlist_uris(&self, settings: &PlaybackConfig, playlist_id: &str) -> Result<Vec<String>> {
+        self.ensure_connected(settings).await?;
+        let session = self.session.lock().expect("session lock").clone();
+        crate::spotify::lists::playlist_uris(&session, playlist_id).await
+    }
+
+    /// Song details for up to `spotify::lists::CHUNK` song links, through the playback login.
+    pub async fn tracks(&self, uris: &[String]) -> Result<Vec<crate::spotify::api::Track>> {
+        let session = self.session.lock().expect("session lock").clone();
+        crate::spotify::lists::tracks(&session, uris).await
+    }
+
     /// A Web API token from the playback login. Spotify's own client isn't held to the limits of
     /// developer apps, so this can read playlists your app gets "403 Forbidden" for.
     pub async fn web_token(&self, settings: &PlaybackConfig) -> Result<String> {

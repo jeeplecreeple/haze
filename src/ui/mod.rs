@@ -270,6 +270,9 @@ pub enum Message {
     // Browsing
     Open(Page),
     Tracks(Page, Result<Vec<Track>, String>),
+    /// Part of a playlist arriving (the number says which load it belongs to).
+    PlaylistPart(u64, Result<Vec<Track>, String>),
+    PlaylistDone(u64),
     SearchChanged(String),
     SearchSubmit,
     PlayFrom(usize),
@@ -464,6 +467,14 @@ pub struct App {
     pub page: Page,
     pub tracks: Vec<Track>,
     pub loading: bool,
+    /// The first songs are showing and the rest of the playlist is still arriving.
+    pub loading_more: bool,
+    /// Counts page loads, so parts of a playlist you've since left are ignored.
+    load_gen: u64,
+    /// Stops the playlist still arriving when you open something else.
+    playlist_load: Option<iced::task::Handle>,
+    /// Playlists the Web API refused, read straight through the playback login next time.
+    via_playback: Arc<Mutex<std::collections::HashSet<String>>>,
     pub search: String,
     pub queue: Queue,
     pub playing: bool,
@@ -545,6 +556,99 @@ fn err(e: anyhow::Error) -> String {
     format!("{e:#}")
 }
 
+type Parts = iced::futures::channel::mpsc::Sender<Result<Vec<Track>, String>>;
+
+/// Loads a playlist, handing its songs over a page at a time so the first ones show at once.
+///
+/// The Web API only shows developer apps playlists you own or help edit, so for anyone else's
+/// (and Spotify's own) it says 403. Those are read through the playback login instead, the way
+/// Spotify's apps do, and remembered so the next visit goes straight there.
+async fn stream_playlist(
+    api: Api,
+    audio: Option<Arc<Audio>>,
+    settings: crate::config::PlaybackConfig,
+    id: String,
+    known: Arc<Mutex<std::collections::HashSet<String>>>,
+    tx: &mut Parts,
+) -> anyhow::Result<()> {
+    use crate::spotify::api::{MAX_LIST, status};
+    use crate::spotify::lists::CHUNK;
+    use iced::futures::{SinkExt, StreamExt};
+    use reqwest::StatusCode;
+
+    let refused = |e: &anyhow::Error| matches!(status(e), Some(StatusCode::FORBIDDEN | StatusCode::NOT_FOUND | StatusCode::TOO_MANY_REQUESTS));
+    let web_error = if known.lock().expect("playlist set").contains(&id) {
+        None
+    } else {
+        match api.playlist_first_page(&id, None).await {
+            Ok((first, mut next)) => {
+                let mut count = first.len();
+                tx.send(Ok(first)).await?;
+                while let Some(url) = next.take().filter(|_| count < MAX_LIST) {
+                    let (more, after) = api.track_page(&url, None).await?;
+                    count += more.len();
+                    tx.send(Ok(more)).await?;
+                    next = after;
+                }
+                return Ok(());
+            }
+            Err(e) if refused(&e) => Some(e),
+            Err(e) => return Err(e),
+        }
+    };
+    let Some(audio) = audio else {
+        return Err(anyhow::anyhow!("Haze opens other people's playlists through the playback login, which hasn't connected yet. Try again in a moment."));
+    };
+
+    let mut sent = 0;
+    let via_session = async {
+        let uris = audio.playlist_uris(&settings, &id).await?;
+        if uris.is_empty() {
+            tx.send(Ok(Vec::new())).await?;
+            return anyhow::Ok(());
+        }
+        // A few requests at once, still handed over in order.
+        let mut parts = iced::futures::stream::iter(uris.chunks(CHUNK).map(<[String]>::to_vec))
+            .map(|chunk| {
+                let audio = audio.clone();
+                async move { audio.tracks(&chunk).await }
+            })
+            .buffered(3);
+        while let Some(part) = parts.next().await {
+            tx.send(Ok(part?)).await?;
+            sent += 1;
+        }
+        anyhow::Ok(())
+    };
+    match via_session.await {
+        Ok(()) => {
+            known.lock().expect("playlist set").insert(id);
+            return Ok(());
+        }
+        Err(e) if sent > 0 => return Err(e),
+        Err(e) => log::warn!("couldn't read playlist {id} through the playback login: {e:#}"),
+    }
+
+    // Last try: the Web API with the playback login's token.
+    let blocked = || {
+        anyhow::anyhow!("Spotify won't let Haze open this playlist. Try saving its songs to a playlist of your own.")
+    };
+    let token = audio.web_token(&settings).await.map_err(|e| {
+        log::warn!("couldn't get a playback login token for playlist {id}: {e:#}");
+        blocked()
+    })?;
+    match api.playlist_tracks(&id, Some(&token)).await {
+        Ok(tracks) => {
+            tx.send(Ok(tracks)).await?;
+            Ok(())
+        }
+        Err(e) => {
+            log::warn!("playlist {id} still refused with the playback login: {e:#}; first refusal: {web_error:?}");
+            Err(blocked())
+        }
+    }
+}
+
 impl App {
     fn new(config: Config, font_families: Vec<String>) -> (Self, Task<Message>) {
         let colors = theme::resolve(&config.appearance);
@@ -565,6 +669,10 @@ impl App {
             page: Page::Dj,
             tracks: Vec::new(),
             loading: false,
+            loading_more: false,
+            load_gen: 0,
+            playlist_load: None,
+            via_playback: Arc::default(),
             search: String::new(),
             queue: Queue::default(),
             playing: false,
@@ -1111,6 +1219,9 @@ impl App {
 
     fn open_page(&mut self, page: Page) -> Task<Message> {
         self.page = page.clone();
+        self.load_gen += 1;
+        self.loading_more = false;
+        self.playlist_load = None;
         let Some(api) = self.api.clone() else {
             return Task::none();
         };
@@ -1123,35 +1234,18 @@ impl App {
                 }))
             }
             Page::Playlist(p) => {
-                let id = p.id.clone();
-                let audio = self.audio.clone();
-                let settings = self.config.playback.clone();
-                let load = async move {
-                    match api.playlist_tracks(&id, None).await {
-                        Ok(tracks) => Ok(tracks),
-                        // Developer apps can't read some playlists (Spotify's own, and some other
-                        // people's), so read it with the playback login instead.
-                        Err(e) if e.to_string().contains("403") => {
-                            let Some(audio) = audio else { return Err(e) };
-                            let blocked = || {
-                                anyhow::anyhow!("Spotify won't let Haze open this playlist. Try saving its songs to a playlist of your own.")
-                            };
-                            let token = audio.web_token(&settings).await.map_err(|e| {
-                                log::warn!("couldn't get a playback login token for a 403 playlist: {e}");
-                                blocked()
-                            })?;
-                            api.playlist_tracks(&id, Some(&token)).await.map_err(|e| {
-                                log::warn!("playlist still refused with the playback login: {e}");
-                                blocked()
-                            })
-                        }
-                        Err(e) => Err(e),
+                let (load, id, audio, settings, known) =
+                    (self.load_gen, p.id.clone(), self.audio.clone(), self.config.playback.clone(), self.via_playback.clone());
+                let parts = iced::stream::channel(4, async move |mut tx| {
+                    if let Err(e) = stream_playlist(api, audio, settings, id, known, &mut tx).await {
+                        let _ = iced::futures::SinkExt::send(&mut tx, Err(err(e))).await;
                     }
-                };
-                Some(Task::perform(async move { load.await.map_err(err) }, {
-                    let page = page.clone();
-                    move |r| Message::Tracks(page.clone(), r)
-                }))
+                });
+                let (task, handle) = Task::run(parts, move |r| Message::PlaylistPart(load, r))
+                    .chain(Task::done(Message::PlaylistDone(load)))
+                    .abortable();
+                self.playlist_load = Some(handle.abort_on_drop());
+                Some(task)
             }
             Page::Search => {
                 self.tracks.clear();
@@ -1405,6 +1499,29 @@ impl App {
                         }
                         Err(e) => self.notify(e, true),
                     }
+                }
+            }
+            Message::PlaylistPart(load, result) if load == self.load_gen => match result {
+                Ok(tracks) if self.loading => {
+                    self.loading = false;
+                    self.loading_more = true;
+                    self.tracks = tracks;
+                    self.track_scroll.0 = 0.0;
+                    return iced::widget::operation::snap_to("tracks", iced::widget::scrollable::RelativeOffset::START);
+                }
+                Ok(tracks) => self.tracks.extend(tracks),
+                Err(e) => {
+                    let partial = !self.loading;
+                    self.loading = false;
+                    self.loading_more = false;
+                    self.notify(if partial { format!("Couldn't load the rest of this playlist: {e}") } else { e }, true);
+                }
+            },
+            Message::PlaylistPart(..) => {}
+            Message::PlaylistDone(load) => {
+                if load == self.load_gen {
+                    self.loading = false;
+                    self.loading_more = false;
                 }
             }
             Message::SearchChanged(s) => self.search = s,

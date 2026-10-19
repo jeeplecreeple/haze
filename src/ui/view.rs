@@ -645,6 +645,9 @@ impl App {
             list = list.push(line);
         }
         list = list.push(Space::new().height((self.tracks.len() - last) as f32 * row_h));
+        if self.loading_more {
+            list = list.push(container(self.muted("Loading more songs…").size(self.fs(0.9))).padding([8, 12]));
+        }
         column![
             header,
             container(Space::new().height(1)).width(Fill).style(style::tile(style::tint(self.colors, 0.1), 0.0)),

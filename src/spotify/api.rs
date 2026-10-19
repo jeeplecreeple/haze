@@ -11,7 +11,27 @@ use super::auth::Auth;
 
 const BASE: &str = "https://api.spotify.com/v1";
 /// Stop paging long playlists here; keeps memory small and the UI quick.
-const MAX_LIST: usize = 1000;
+pub const MAX_LIST: usize = 1000;
+
+/// A refusal from the Web API, kept as a type so callers can tell a 403 from a 404.
+#[derive(Debug)]
+pub struct ApiError {
+    pub status: StatusCode,
+    pub message: String,
+}
+
+impl std::fmt::Display for ApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for ApiError {}
+
+/// The HTTP status of a Web API refusal, if that's what `e` is.
+pub fn status(e: &anyhow::Error) -> Option<StatusCode> {
+    e.downcast_ref::<ApiError>().map(|e| e.status)
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Track {
@@ -64,11 +84,11 @@ impl Api {
     async fn get_as<T: DeserializeOwned>(&self, url: &str, token: Option<&str>) -> Result<T> {
         let url = if url.starts_with("http") { url.to_string() } else { format!("{BASE}{url}") };
         for attempt in 0..3 {
-            let token = match token {
+            let bearer = match token {
                 Some(t) => t.to_string(),
                 None => self.auth.access_token().await?,
             };
-            let resp = self.http.request(Method::GET, &url).bearer_auth(token).send().await?;
+            let resp = self.http.request(Method::GET, &url).bearer_auth(bearer).send().await?;
             match resp.status() {
                 StatusCode::TOO_MANY_REQUESTS if attempt < 2 => {
                     let wait = resp
@@ -76,14 +96,18 @@ impl Api {
                         .get("retry-after")
                         .and_then(|v| v.to_str().ok())
                         .and_then(|v| v.parse::<u64>().ok())
-                        .unwrap_or(2)
-                        .min(30);
-                    tokio::time::sleep(Duration::from_secs(wait)).await;
+                        .unwrap_or(2);
+                    // A borrowed login is a fallback; when Spotify wants a long pause, give up so
+                    // the caller can say so instead of sitting on "Loading…".
+                    if token.is_some() && wait > 5 {
+                        return Err(ApiError { status: StatusCode::TOO_MANY_REQUESTS, message: format!("Spotify API asked to wait {wait}s for {url}") }.into());
+                    }
+                    tokio::time::sleep(Duration::from_secs(wait.min(30))).await;
                 }
                 s if s.is_success() => return Ok(resp.json().await?),
                 s => {
                     let body = resp.text().await.unwrap_or_default();
-                    return Err(anyhow!("Spotify API {s} for {url}: {}", truncate(&body, 300)));
+                    return Err(ApiError { status: s, message: format!("Spotify API {s} for {url}: {}", truncate(&body, 300)) }.into());
                 }
             }
         }
@@ -122,12 +146,33 @@ impl Api {
     /// A playlist's songs. `token` reads it with another login (see `Audio::web_token`), for
     /// playlists Spotify won't show to your developer app.
     pub async fn playlist_tracks(&self, playlist_id: &str, token: Option<&str>) -> Result<Vec<Track>> {
-        let id = urlencoding::encode(playlist_id);
-        // Newer API versions serve playlist contents under /items; older ones under /tracks.
-        match self.paged_tracks(format!("/playlists/{id}/items?limit=50"), token).await {
-            Ok(tracks) => Ok(tracks),
-            Err(_) => self.paged_tracks(format!("/playlists/{id}/tracks?limit=50"), token).await,
+        let (mut out, mut next) = self.playlist_first_page(playlist_id, token).await?;
+        while let Some(url) = next.take().filter(|_| out.len() < MAX_LIST) {
+            let (more, after) = self.track_page(&url, token).await?;
+            out.extend(more);
+            next = after;
         }
+        Ok(out)
+    }
+
+    /// The first page of a playlist's songs, and the link to the next page.
+    pub async fn playlist_first_page(&self, playlist_id: &str, token: Option<&str>) -> Result<(Vec<Track>, Option<String>)> {
+        let id = urlencoding::encode(playlist_id);
+        // Newer API versions serve playlist contents under /items; older ones under /tracks. Only
+        // a missing endpoint is worth the second try: a refusal (403) would just be refused again.
+        match self.track_page(&format!("/playlists/{id}/items?limit=50"), token).await {
+            Err(e) if status(&e) == Some(StatusCode::NOT_FOUND) => {
+                self.track_page(&format!("/playlists/{id}/tracks?limit=50"), token).await
+            }
+            r => r,
+        }
+    }
+
+    /// One page of songs from a paged list, and the link to the next page.
+    pub async fn track_page(&self, url: &str, token: Option<&str>) -> Result<(Vec<Track>, Option<String>)> {
+        let page: Page<SavedItem> = self.get_as(url, token).await?;
+        let tracks = page.items.into_iter().filter_map(|i| i.track.or(i.item)).filter_map(RawTrack::into_track).collect();
+        Ok((tracks, page.next))
     }
 
     pub async fn liked_tracks(&self) -> Result<Vec<Track>> {
@@ -138,10 +183,10 @@ impl Api {
         let mut out = Vec::new();
         let mut next = Some(first);
         while let Some(url) = next.take() {
-            let page: Page<SavedItem> = self.get_as(&url, token).await?;
-            out.extend(page.items.into_iter().filter_map(|i| i.track.or(i.item)).filter_map(RawTrack::into_track));
+            let (more, after) = self.track_page(&url, token).await?;
+            out.extend(more);
             if out.len() < MAX_LIST {
-                next = page.next;
+                next = after;
             }
         }
         Ok(out)
