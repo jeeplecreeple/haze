@@ -245,19 +245,24 @@ back. The buttons next to the **×** hide the lyrics, open the player settings a
 
 Everything about it can be changed in **Settings → Player**, and changes show straight away:
 
-- **Ready-made looks:** Halo (the default), Vinyl (a round, spinning cover), Minimal, Studio and
-  Bloom (a flower shape with rainbow bars). Pick one, then change whatever you like.
+- **Ready-made looks:** Halo (the default), Vinyl (a round, spinning cover), Minimal, Studio,
+  Bloom (a flower shape with rainbow bars), Pulse (a round cover that bounces with the beat inside
+  a ring of dots, with the seek ring around it), Neon (a hexagon with a pink-to-blue spiky ring)
+  and Sunburst (a pointy, spinning cover in rainbow spikes). Pick one, then change whatever you like.
 - **Page:** player and lyrics side by side, the player alone, or a small player above the lyrics;
   which side the lyrics go on; the card behind the current line; a blurred cover, a soft glow or
   the plain theme behind it; whether the sidebar and queue stay visible; text alignment and size.
-- **Cover:** cookie, circle, flower, squircle, rounded or square; its size; how many bumps the wavy
-  edge has and how deep they go; spinning slowly like a record.
-- **Visualizer:** a ring of bars, a ring-shaped wave, bars or a wave under the cover, or off. Its
-  colour (accent, from the cover, rainbow, text or your own), the number of bars, their thickness,
+- **Cover:** cookie, circle, flower, burst (pointy), hexagon, squircle, rounded or square; its
+  size; how many bumps (or points) the edge has and how deep they go; how much it pulses with the
+  beat; an edge around it in the visualizer's colour; spinning slowly like a record.
+- **Visualizer:** a ring of bars, a ring-shaped wave, a ring of dots, a spiky ring, bars or a wave
+  under the cover, or off. Its colour (accent, from the cover, rainbow, a gradient between two
+  colours, text or your own), the number of bars, their thickness,
   how far they reach, how strongly and how smoothly they react, mirrored sides, a glow, and how
   many times a second it redraws (lower uses less CPU).
 - **Controls:** the play button's shape and size and whether it turns while playing, the size of
-  the other buttons, the seek bar style (wave, thin line, thick bar, dots or hidden), and whether
+  the other buttons, the seek bar style (wave, thin line, thick bar, dots, a ring around the cover
+  that you click or drag to seek, or hidden), and whether
   to show the times, volume, shuffle and repeat, the album name, and buttons for the queue, DJ
   and lyrics.
 
@@ -318,8 +323,8 @@ player_bar = "top"
 track_columns = ["title", "artist", "duration"]
 
 [player]
-cover_shape = "flower"      # cookie, circle, flower, squircle, rounded, square
-visualizer = "ring_wave"    # ring, ring_wave, bars, wave, off
+cover_shape = "flower"      # cookie, circle, flower, burst, hexagon, squircle, rounded, square
+visualizer = "ring_wave"    # ring, ring_wave, dots, spikes, bars, wave, off
 ```
 
 The app font, text size and window size apply after a restart. Close Haze before editing the

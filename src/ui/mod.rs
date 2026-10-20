@@ -978,7 +978,7 @@ impl App {
                     (0.25 + 0.35 * (t * 2.3 + x * 9.0).sin().abs() * (1.0 - 0.5 * x) + 0.4 * beat).min(1.0)
                 })
                 .collect()
-        } else if self.playing && p.visualizer != crate::config::Visualizer::Off {
+        } else if self.playing && (p.visualizer != crate::config::Visualizer::Off || p.pulse > 0.0) {
             crate::visualizer::spectrum(bands, crate::player::OUTPUT_DELAY_MS)
         } else {
             vec![0.0; bands]

@@ -1,4 +1,4 @@
-//! The outlines used by the Now Playing page: cookie, flower, squircle and friends. The same
+//! The outlines used by the Now Playing page: cookie, flower, burst, hexagon and friends. The same
 //! function cuts the cover art (as a transparent mask) and draws the play button and visualizer.
 
 use iced::widget::canvas::Path;
@@ -26,6 +26,16 @@ impl Outline {
             Shape::Circle => 1.0,
             Shape::Cookie => 1.0 - self.depth * 0.18 * (0.5 - 0.5 * (n * angle).cos()),
             Shape::Flower => 1.0 - self.depth * 0.4 * (1.0 - (n * angle * 0.5).cos().abs()).powf(1.6),
+            // Straight-sided points, like a starburst sticker.
+            Shape::Burst => {
+                let t = (n * angle / std::f32::consts::TAU).rem_euclid(1.0);
+                1.0 - self.depth * 0.38 * (2.0 * t - 1.0).abs()
+            }
+            // Points at the left and right, flat top and bottom.
+            Shape::Hexagon => {
+                let sixth = std::f32::consts::FRAC_PI_3;
+                (sixth / 2.0).cos() / (angle.rem_euclid(sixth) - sixth / 2.0).cos()
+            }
             Shape::Squircle => superellipse(4.0),
             Shape::Rounded => superellipse(9.0),
             Shape::Square => 1.0 / c.max(s),

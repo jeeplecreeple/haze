@@ -78,6 +78,8 @@ impl App {
             self.p_num("Cover size (0 = auto)", p.cover_size, 0.0..=600.0, |p, v| p.cover_size = v),
             self.p_num("Wavy edge bumps", p.wave_count as f32, 3.0..=24.0, |p, v| p.wave_count = v as u32),
             self.p_num("Wavy edge depth", p.wave_depth, 0.0..=100.0, |p, v| p.wave_depth = v),
+            self.p_num("Pulse with the beat", p.pulse, 0.0..=100.0, |p, v| p.pulse = v),
+            self.p_num("Edge around the cover", p.cover_border, 0.0..=12.0, |p, v| p.cover_border = v),
             self.p_toggle("Spin like a record", p.spin, |p, v| p.spin = v),
             self.p_num("Spin speed (turns a minute)", p.spin_speed, 1.0..=33.0, |p, v| p.spin_speed = v),
         ];
@@ -89,6 +91,16 @@ impl App {
             viz.push(self.setting(
                 "Custom colour",
                 self.input("#ff5c8a", &p.visualizer_custom).on_input(self.with_player(|p, v: String| p.visualizer_custom = v)),
+            ));
+        }
+        if p.visualizer_color == VisualizerColor::Gradient {
+            viz.push(self.setting(
+                "Starts with (empty = accent)",
+                self.input("#ff3df0", &p.visualizer_custom).on_input(self.with_player(|p, v: String| p.visualizer_custom = v)),
+            ));
+            viz.push(self.setting(
+                "Ends with (empty = cover colour)",
+                self.input("#3dd8ff", &p.visualizer_custom_end).on_input(self.with_player(|p, v: String| p.visualizer_custom_end = v)),
             ));
         }
         viz.extend([

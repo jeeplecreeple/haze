@@ -28,9 +28,10 @@ impl App {
     /// The colour of each visualizer bar.
     fn bar_colors(&self, count: usize) -> Vec<Color> {
         let p = &self.config.player;
+        let cover = self.cover_accent.unwrap_or(self.colors.accent);
         let one = match p.visualizer_color {
             VisualizerColor::Accent => self.colors.accent,
-            VisualizerColor::Cover => self.cover_accent.unwrap_or(self.colors.accent),
+            VisualizerColor::Cover => cover,
             VisualizerColor::Text => self.colors.text,
             VisualizerColor::Custom => crate::theme::parse_hex(&p.visualizer_custom).unwrap_or(self.colors.accent),
             VisualizerColor::Rainbow => {
@@ -41,15 +42,43 @@ impl App {
                     })
                     .collect();
             }
+            VisualizerColor::Gradient => {
+                let from = crate::theme::parse_hex(&p.visualizer_custom).unwrap_or(self.colors.accent);
+                let to = crate::theme::parse_hex(&p.visualizer_custom_end).unwrap_or(cover);
+                // A mirrored ring runs from the bottom to the top on both sides, so the colours do too.
+                let mirrored = p.visualizer_mirror && p.visualizer.is_ring();
+                let half = (count / 2).max(1);
+                return (0..count)
+                    .map(|i| {
+                        let t = if mirrored { i.min(count - i) as f32 / half as f32 } else { i as f32 / (count - 1).max(1) as f32 };
+                        mix(from, to, t.clamp(0.0, 1.0))
+                    })
+                    .collect();
+            }
         };
         vec![one; count]
+    }
+
+    /// The colour of the cover's edge and the seek ring: the visualizer's colour where it has one.
+    fn edge_color(&self) -> Color {
+        match self.config.player.visualizer_color {
+            VisualizerColor::Rainbow => self.colors.accent,
+            VisualizerColor::Gradient => self.bar_colors(2)[0],
+            _ => self.bar_colors(1)[0],
+        }
+    }
+
+    /// How hard the bass hits right now, 0-1 (what the cover pulses to).
+    fn beat(&self) -> f32 {
+        let lows = (self.viz.len() / 8).max(2).min(self.viz.len());
+        if lows == 0 { 0.0 } else { self.viz[..lows].iter().sum::<f32>() / lows as f32 }
     }
 
     /// How many frequency bands the visualizer asks for: a mirrored ring shows each one twice.
     pub(in crate::ui) fn visualizer_bands(&self) -> usize {
         let p = &self.config.player;
         let bars = p.visualizer_bars.clamp(8, 256);
-        if p.visualizer_mirror && matches!(p.visualizer, Visualizer::Ring | Visualizer::RingWave) { bars / 2 + 1 } else { bars }
+        if p.visualizer_mirror && p.visualizer.is_ring() { bars / 2 + 1 } else { bars }
     }
 
     pub(super) fn player_page(&self) -> El<'_> {
@@ -65,14 +94,19 @@ impl App {
                 (size.height * 0.22).clamp(96.0, 200.0)
             } else {
                 // Whatever height the song, controls and ring leave over goes to the cover.
-                let ring = matches!(p.visualizer, Visualizer::Ring | Visualizer::RingWave);
-                let ring_scale = if ring { 1.0 + 2.0 * p.visualizer_height / 100.0 } else { 1.0 };
-                let ring_pad = if ring { p.bar_width * 4.0 + 20.0 } else { 0.0 };
-                let under = if matches!(p.visualizer, Visualizer::Bars | Visualizer::Wave) { 1.0 + p.visualizer_height / 100.0 } else { 1.0 };
+                let ring = p.visualizer.is_ring();
+                let ring_scale = (if ring { 1.0 + 2.0 * p.visualizer_height / 100.0 } else { 1.0 }) * (1.0 + PULSE * p.pulse / 100.0);
+                let ring_pad = if ring { p.bar_width * 4.0 + 20.0 } else { 0.0 } + 2.0 * self.orbit_width();
+                let under = if p.visualizer.is_under() { 1.0 + p.visualizer_height / 100.0 } else { 1.0 };
                 let rest = 56.0
                     + 20.0
                     + p.title_size * (if p.show_album { 2.6 } else { 2.0 })
-                    + if p.progress == Progress::Hidden { 0.0 } else { 34.0 }
+                    + match p.progress {
+                        Progress::Hidden => 0.0,
+                        Progress::Ring if !p.show_times => 0.0,
+                        Progress::Ring => 20.0,
+                        _ => 34.0,
+                    }
                     + p.play_size.max(p.control_size) + 14.0
                     + if p.show_volume { 32.0 } else { 0.0 }
                     + if p.show_extras { p.control_size + 30.0 } else { 0.0 }
@@ -159,13 +193,16 @@ impl App {
             col = col.push(row![self.halo(cover), container(info).center_y(Length::Shrink)].spacing(20).align_y(Alignment::Center));
         } else {
             col = col.push(container(self.halo(cover)).center_x(Fill));
-            if matches!(p.visualizer, Visualizer::Bars | Visualizer::Wave) {
+            if p.visualizer.is_under() {
                 col = col.push(self.under_visualizer(width.min(cover * 1.4), (cover * p.visualizer_height / 100.0).max(16.0)));
             }
             col = col.push(Space::new().height(6)).push(info);
         }
-        if p.progress != Progress::Hidden {
-            col = col.push(self.player_progress());
+        match p.progress {
+            Progress::Hidden => {}
+            Progress::Ring if !p.show_times => {}
+            Progress::Ring => col = col.push(self.ring_times(align)),
+            _ => col = col.push(self.player_progress()),
         }
         col = col.push(self.player_controls());
         if p.show_volume {
@@ -188,18 +225,31 @@ impl App {
         col.into()
     }
 
-    /// The cover, with the ring visualizer around it.
+    /// Room outside the cover for its edge and the seek ring.
+    fn orbit_width(&self) -> f32 {
+        let p = &self.config.player;
+        let border = p.cover_border.max(0.0);
+        let ring = if p.progress == Progress::Ring { ORBIT_GAP + ORBIT_WIDTH + 4.0 } else { 0.0 };
+        if border + ring > 0.0 { border + ring + 2.0 } else { 0.0 }
+    }
+
+    /// The cover, with the ring visualizer around it, its edge and the seek ring.
     fn halo(&self, cover: f32) -> El<'_> {
         let p = &self.config.player;
-        let ring = matches!(p.visualizer, Visualizer::Ring | Visualizer::RingWave);
+        let ring = p.visualizer.is_ring();
+        let orbit = self.orbit_width();
+        // The box is sized for the biggest beat, so the page doesn't shuffle while the cover pulses.
+        let grow = PULSE * p.pulse.clamp(0.0, 100.0) / 100.0;
+        let room = cover * (1.0 + grow);
+        let shown = cover * (1.0 + grow * self.beat());
         let reach = if ring { cover * p.visualizer_height / 100.0 } else { 0.0 };
-        let pad = if ring { reach + p.bar_width * 2.0 + 10.0 } else { 0.0 };
-        let side = cover + pad * 2.0;
+        let pad = orbit + if ring { reach + p.bar_width * 2.0 + 10.0 } else { 0.0 };
+        let side = room + pad * 2.0;
         let bands = self.visualizer_bands();
         let art: El = match &self.player_cover {
             Some((_, handle)) if self.config.appearance.show_album_art => image(handle.clone())
-                .width(cover)
-                .height(cover)
+                .width(shown)
+                .height(shown)
                 .content_fit(ContentFit::Fill)
                 .filter_method(image::FilterMethod::Linear)
                 .rotation(iced::Rotation::Floating(Radians(self.spin)))
@@ -210,29 +260,61 @@ impl App {
                 turn: self.spin,
                 glyph: None,
             })
-            .width(cover)
-            .height(cover)
+            .width(shown)
+            .height(shown)
             .into(),
         };
-        if !ring {
-            return container(art).center(cover).into();
+        let mut layers = stack![];
+        if ring {
+            layers = layers.push(
+                Canvas::new(Halo {
+                    levels: self.levels(bands),
+                    colors: self.bar_colors(p.visualizer_bars.clamp(8, 256)),
+                    outline: self.cover_outline(),
+                    cover: shown,
+                    reach,
+                    turn: self.spin,
+                    look: p.visualizer,
+                    mirror: p.visualizer_mirror,
+                    width: p.bar_width,
+                    glow: p.visualizer_glow,
+                    bars: p.visualizer_bars.clamp(8, 256),
+                    gap: 6.0 + orbit,
+                })
+                .width(side)
+                .height(side),
+            );
         }
-        let halo = Canvas::new(Halo {
-            levels: self.levels(bands),
-            colors: self.bar_colors(p.visualizer_bars.clamp(8, 256)),
-            outline: self.cover_outline(),
-            cover,
-            reach,
-            turn: self.spin,
-            wave: p.visualizer == Visualizer::RingWave,
-            mirror: p.visualizer_mirror,
-            width: p.bar_width,
-            glow: p.visualizer_glow,
-            bars: p.visualizer_bars.clamp(8, 256),
-        })
-        .width(side)
-        .height(side);
-        stack![halo, container(art).center(side)].into()
+        layers = layers.push(container(art).center(side));
+        if orbit > 0.0 {
+            let duration = self.queue.current().map(|e| e.track.duration_ms).unwrap_or(0) as f32;
+            layers = layers.push(
+                Canvas::new(Orbit {
+                    outline: self.cover_outline(),
+                    cover: shown,
+                    turn: self.spin,
+                    border: p.cover_border.max(0.0),
+                    color: self.edge_color(),
+                    seek: (p.progress == Progress::Ring).then(|| {
+                        (self.seek_preview.unwrap_or(self.live_position() as f32).min(duration.max(1.0)), duration.max(1.0))
+                    }),
+                    rest: style::alpha(self.colors.text, 0.18),
+                })
+                .width(side)
+                .height(side),
+            );
+        }
+        layers.into()
+    }
+
+    /// "1:23 / 3:45" under the song, for the seek ring.
+    fn ring_times(&self, align: Alignment) -> El<'_> {
+        let duration = self.queue.current().map(|e| e.track.duration_ms).unwrap_or(0);
+        let position = self.seek_preview.map(|v| v as u32).unwrap_or(self.live_position()).min(duration);
+        container(text(format!("{} / {}", mmss(position), mmss(duration))).size(self.fs(0.85)).color(self.colors.muted_text))
+            .width(Fill)
+            .align_x(align)
+            .into()
     }
 
     fn levels(&self, bands: usize) -> Vec<f32> {
@@ -396,11 +478,13 @@ struct Halo {
     cover: f32,
     reach: f32,
     turn: f32,
-    wave: bool,
+    look: Visualizer,
     mirror: bool,
     width: f32,
     glow: bool,
     bars: usize,
+    /// Space between the cover and the bars.
+    gap: f32,
 }
 
 impl Halo {
@@ -424,13 +508,51 @@ impl<M> canvas::Program<M> for Halo {
     fn draw(&self, _: &(), renderer: &Renderer, _: &Theme, bounds: Rectangle, _: mouse::Cursor) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
         let c = frame.center();
-        let gap = 6.0;
+        let gap = self.gap;
         let at = |a: f32, r: f32| c + Vector::new(a.cos() * r, a.sin() * r);
         let edge = |a: f32| self.outline.radius(a - self.turn) * self.cover / 2.0 + gap;
-        if self.wave {
+        let angle = |i: usize| FRAC_PI_2 + i as f32 / self.bars as f32 * TAU;
+        if self.look == Visualizer::Dots {
+            // A faint dot where each bar starts, and a bright one riding out with the music.
+            for i in 0..self.bars {
+                let (a, level) = (angle(i), self.level(i));
+                let color = self.colors[i % self.colors.len()];
+                let r0 = edge(a) + self.width * 0.5;
+                frame.fill(&Path::circle(at(a, r0), self.width * 0.32), style::alpha(color, 0.35));
+                let tip = at(a, r0 + 2.0 + level * self.reach);
+                let size = self.width * (0.45 + 0.4 * level);
+                if self.glow {
+                    frame.fill(&Path::circle(tip, size * 2.2), style::alpha(color, 0.08 + 0.1 * level));
+                }
+                frame.fill(&Path::circle(tip, size), style::alpha(color, 0.55 + 0.45 * level));
+            }
+            return vec![frame.into_geometry()];
+        }
+        if self.look == Visualizer::Spikes {
+            // A pointed triangle per bar, each as wide as its slice of the ring.
+            let half_step = TAU / self.bars as f32 * 0.42;
+            for i in 0..self.bars {
+                let (a, level) = (angle(i), self.level(i));
+                let color = self.colors[i % self.colors.len()];
+                let spike = |reach: f32| {
+                    Path::new(|p| {
+                        p.move_to(at(a - half_step, edge(a - half_step)));
+                        p.line_to(at(a, edge(a) + 3.0 + level * reach));
+                        p.line_to(at(a + half_step, edge(a + half_step)));
+                        p.close();
+                    })
+                };
+                if self.glow {
+                    frame.fill(&spike(self.reach * 1.25 + self.width), style::alpha(color, 0.1 + 0.08 * level));
+                }
+                frame.fill(&spike(self.reach), style::alpha(color, 0.5 + 0.5 * level));
+            }
+            return vec![frame.into_geometry()];
+        }
+        if self.look == Visualizer::RingWave {
             let points: Vec<Point> = (0..self.bars)
                 .map(|i| {
-                    let a = FRAC_PI_2 + i as f32 / self.bars as f32 * TAU;
+                    let a = angle(i);
                     at(a, edge(a) + 2.0 + self.level(i) * self.reach)
                 })
                 .collect();
@@ -446,7 +568,7 @@ impl<M> canvas::Program<M> for Halo {
         let passes: &[(f32, f32)] = if self.glow { GLOW } else { &[(1.0, 1.0)] };
         for &(wide, strength) in passes {
             for i in 0..self.bars {
-                let a = FRAC_PI_2 + i as f32 / self.bars as f32 * TAU;
+                let a = angle(i);
                 let level = self.level(i);
                 let r0 = edge(a);
                 let line = Path::line(at(a, r0), at(a, r0 + 2.0 + level * self.reach));
@@ -459,6 +581,106 @@ impl<M> canvas::Program<M> for Halo {
             }
         }
         vec![frame.into_geometry()]
+    }
+}
+
+/// How much bigger the cover gets on the hardest beat at full pulse.
+const PULSE: f32 = 0.09;
+/// The seek ring: its distance from the cover's edge, and its thickness.
+const ORBIT_GAP: f32 = 5.0;
+const ORBIT_WIDTH: f32 = 4.0;
+
+/// Drawn over the cover: an edge hugging its outline, and the seek ring you can click or drag.
+struct Orbit {
+    outline: Outline,
+    cover: f32,
+    turn: f32,
+    border: f32,
+    color: Color,
+    /// Position and length, when the seek ring is on.
+    seek: Option<(f32, f32)>,
+    rest: Color,
+}
+
+impl Orbit {
+    /// The seek ring's distance from the centre at `angle`.
+    fn ring_radius(&self, angle: f32) -> f32 {
+        self.outline.radius(angle - self.turn) * self.cover / 2.0 + self.border + ORBIT_GAP + ORBIT_WIDTH / 2.0
+    }
+
+    /// The angle under `p` as a share of the song (0 at the top, going clockwise), if `p` is on the ring.
+    fn share_at(&self, bounds: Rectangle, p: Point) -> Option<f32> {
+        let c = bounds.center();
+        let (dx, dy) = (p.x - c.x, p.y - c.y);
+        let a = dy.atan2(dx);
+        ((dx.hypot(dy) - self.ring_radius(a)).abs() <= 14.0).then(|| (a + FRAC_PI_2).rem_euclid(TAU) / TAU)
+    }
+
+    /// The ring from the top round to `share` of the way.
+    fn arc(&self, center: Point, share: f32) -> Path {
+        let steps = ((240.0 * share).ceil() as usize).max(2);
+        Path::new(|p| {
+            for i in 0..=steps {
+                let a = -FRAC_PI_2 + share * TAU * i as f32 / steps as f32;
+                let r = self.ring_radius(a);
+                let point = center + Vector::new(a.cos() * r, a.sin() * r);
+                if i == 0 { p.move_to(point) } else { p.line_to(point) }
+            }
+        })
+    }
+}
+
+impl canvas::Program<Message> for Orbit {
+    type State = Dragging;
+
+    fn update(&self, state: &mut Dragging, event: &canvas::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<canvas::Action<Message>> {
+        let (_, max) = self.seek?;
+        match event {
+            canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                let share = self.share_at(bounds, cursor.position_over(bounds)?)?;
+                state.0 = true;
+                Some(canvas::Action::publish(Message::SeekPreview(share * max)).and_capture())
+            }
+            canvas::Event::Mouse(mouse::Event::CursorMoved { position }) if state.0 => {
+                let c = bounds.center();
+                let share = ((position.y - c.y).atan2(position.x - c.x) + FRAC_PI_2).rem_euclid(TAU) / TAU;
+                Some(canvas::Action::publish(Message::SeekPreview(share * max)).and_capture())
+            }
+            canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) if state.0 => {
+                state.0 = false;
+                Some(canvas::Action::publish(Message::SeekCommit).and_capture())
+            }
+            _ => None,
+        }
+    }
+
+    fn draw(&self, state: &Dragging, renderer: &Renderer, _: &Theme, bounds: Rectangle, cursor: mouse::Cursor) -> Vec<Geometry> {
+        let mut frame = Frame::new(renderer, bounds.size());
+        let c = frame.center();
+        if self.border > 0.0 {
+            let edge = self.outline.path(c, self.cover / 2.0 + self.border / 2.0, self.turn);
+            frame.stroke(&edge, Stroke::default().with_width(self.border).with_color(self.color));
+        }
+        if let Some((value, max)) = self.seek {
+            let share = (value / max).clamp(0.0, 1.0);
+            let hot = state.0 || cursor.position_over(bounds).is_some_and(|p| self.share_at(bounds, p).is_some());
+            let width = if hot { ORBIT_WIDTH + 2.0 } else { ORBIT_WIDTH };
+            let line = |color: Color| Stroke::default().with_width(width).with_color(color).with_line_cap(stroke::LineCap::Round);
+            frame.stroke(&self.arc(c, 1.0), line(self.rest));
+            if share > 0.0 {
+                frame.stroke(&self.arc(c, share), line(self.color));
+            }
+            // A dot where you are.
+            let a = -FRAC_PI_2 + share * TAU;
+            let r = self.ring_radius(a);
+            frame.fill(&Path::circle(c + Vector::new(a.cos() * r, a.sin() * r), width * if hot { 1.3 } else { 1.0 }), self.color);
+        }
+        vec![frame.into_geometry()]
+    }
+
+    fn mouse_interaction(&self, state: &Dragging, bounds: Rectangle, cursor: mouse::Cursor) -> mouse::Interaction {
+        let over = self.seek.is_some() && cursor.position_over(bounds).is_some_and(|p| self.share_at(bounds, p).is_some());
+        if state.0 || over { mouse::Interaction::Pointer } else { mouse::Interaction::default() }
     }
 }
 
@@ -612,7 +834,8 @@ impl canvas::Program<Message> for Track {
                     frame.fill(&Path::circle(Point::new(x.min(w - 2.0), mid), r), if on { self.played } else { self.rest });
                 }
             }
-            Progress::Hidden => {}
+            // Drawn round the cover instead (see `Orbit`).
+            Progress::Ring | Progress::Hidden => {}
         }
         vec![frame.into_geometry()]
     }
@@ -629,6 +852,11 @@ fn thumb(frame: &mut Frame, x: f32, mid: f32, h: f32, color: Color) {
         &Path::line(Point::new(x, mid - half), Point::new(x, mid + half)),
         Stroke::default().with_width(4.0).with_color(color).with_line_cap(stroke::LineCap::Round),
     );
+}
+
+/// Part way from `a` to `b`.
+fn mix(a: Color, b: Color, t: f32) -> Color {
+    Color::from_rgb(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t)
 }
 
 /// A smooth closed curve through `points`, using each point as a control between midpoints.

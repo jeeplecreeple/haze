@@ -65,15 +65,18 @@ lyrics_side = "right"     # left | right
 lyrics_card = true        # the current line sits on a soft card
 full_window = true        # hide the sidebar, queue and player bar on this page
 background = "blur"       # blur | glow | theme
-cover_shape = "cookie"    # cookie | circle | flower | squircle | rounded | square
+cover_shape = "cookie"    # cookie | circle | flower | burst | hexagon | squircle | rounded | square
 cover_size = 0.0          # pixels; 0 = fit the window
 spin = false              # turn the cover slowly, like a record
 spin_speed = 4.0          # turns a minute
 wave_depth = 45.0         # 0-100, how deep the cookie and flower edges go
 wave_count = 12           # bumps around the edge
-visualizer = "ring"       # ring | ring_wave | bars | wave | off
-visualizer_color = "accent"  # accent | cover | rainbow | text | custom
-visualizer_custom = ""    # hex colour for "custom"
+pulse = 0.0               # 0-100, how much the cover grows on each beat
+cover_border = 0.0        # pixels; an edge around the cover in the visualizer's colour
+visualizer = "ring"       # ring | ring_wave | dots | spikes | bars | wave | off
+visualizer_color = "accent"  # accent | cover | rainbow | gradient | text | custom
+visualizer_custom = ""    # hex colour for "custom", and where "gradient" starts (empty = accent)
+visualizer_custom_end = ""  # where "gradient" ends (empty = the cover's colour)
 visualizer_bars = 72
 visualizer_height = 22.0  # how far the bars reach, % of the cover
 visualizer_sensitivity = 100.0
@@ -86,7 +89,7 @@ play_shape = "cookie"     # same shapes as the cover
 play_size = 64.0
 play_spin = true
 control_size = 20.0
-progress = "wave"         # wave | line | thick | dots | hidden
+progress = "wave"         # wave | line | thick | dots | ring (around the cover) | hidden
 show_times = true
 show_volume = true
 show_shuffle_repeat = true
